@@ -3,6 +3,7 @@ JSON Language Strategy.
 
 Handles JSON formatting and validation.
 """
+
 import json
 import re
 from typing import List, Optional, Tuple
@@ -21,18 +22,18 @@ class JSONStrategy(LanguageStrategy):
 
     @property
     def extensions(self) -> List[str]:
-        return ['.json']
+        return [".json"]
 
     def detect(self, content: str) -> bool:
         """Detect if content is JSON."""
         stripped = content.strip()
         if not stripped:
             return False
-        
+
         # Must start with { or [
-        if not re.search(r'^\s*[\{\[]', stripped):
+        if not re.search(r"^\s*[\{\[]", stripped):
             return False
-        
+
         try:
             json.loads(stripped)
             return True
@@ -42,49 +43,51 @@ class JSONStrategy(LanguageStrategy):
     def fix(self, content: str, indent_size: int = 4) -> FixResult:
         """Fix JSON formatting using json-repair first, then our logic as fallback."""
         import json
-        
+
         errors = []
         warnings = []
-        
+
         # STAGE 1: Try json-repair first (fixes broken JSON)
         try:
             import json_repair
-            
+
             repaired = json_repair.repair_json(content, return_objects=False)
-            
+
             # Validate repaired JSON
             try:
                 data = json.loads(repaired)
                 fixed = json.dumps(data, indent=indent_size, ensure_ascii=False) + "\n"
-                
+
                 return FixResult(
                     success=True,
                     content=fixed,
                     errors=errors,
                     warnings=warnings,
                     original_valid=True,
-                    fixed_valid=True
+                    fixed_valid=True,
                 )
             except json.JSONDecodeError as e:
-                warnings.append(f"json-repair output invalid: {e}, falling back to internal logic")
-                
+                warnings.append(
+                    f"json-repair output invalid: {e}, falling back to internal logic"
+                )
+
         except ImportError:
             warnings.append("json-repair not installed, using standard json")
         except Exception as e:
             warnings.append(f"json-repair failed: {e}, falling back to internal logic")
-        
+
         # STAGE 2: Fallback to standard json
         try:
             data = json.loads(content)
             fixed = json.dumps(data, indent=indent_size, ensure_ascii=False) + "\n"
-            
+
             return FixResult(
                 success=True,
                 content=fixed,
                 errors=errors,
                 warnings=warnings,
                 original_valid=True,
-                fixed_valid=True
+                fixed_valid=True,
             )
         except json.JSONDecodeError as e:
             errors.append(f"Invalid JSON: {e}")
@@ -94,7 +97,7 @@ class JSONStrategy(LanguageStrategy):
                 errors=errors,
                 warnings=warnings,
                 original_valid=False,
-                fixed_valid=False
+                fixed_valid=False,
             )
 
     def validate(self, content: str) -> Tuple[bool, Optional[str]]:
