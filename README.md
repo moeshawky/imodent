@@ -1,90 +1,106 @@
 # imodent
 
-Smart Python + JSON/JSONL indentation fixer with AST-based validation.
+Smart indentation fixer for Python, JSON, and JSONL — with extensible plugin architecture.
 
 ## Features
 
-- **Auto-detection**: Automatically detects Python, JSON, or JSONL format
-- **AST-based validation**: Ensures code remains syntactically correct after fixing
-- **Python 3.10+ support**: Handles `async/await`, `match/case`, and all modern syntax
-- **Smart indentation**: Uses AST structure to determine correct indentation levels
-- **CLI interface**: Supports backup, dry-run, check, and recursive modes
+- **Auto-detection**: Detects Python, JSON, or JSONL automatically
+- **AST-based validation**: Python code validated with `ast.parse()` before and after fixing
+- **Python 3.10+ support**: `async/await`, `match/case`, decorators, continuation lines
+- **Extensible**: Add new languages via `@StrategyRegistry.register` — no core changes needed
+- **CLI**: `imodent file.py --backup` after `pip install -e .`
 
-## Installation
+## Install
 
 ```bash
-pip install .
-# or
-imodent <file>
+pip install -e .
 ```
 
 ## Usage
 
-### Fix a single file
 ```bash
-imodent myfile.py
-```
-
-### Preview changes (dry-run)
-```bash
-imodent myfile.py --dry-run
-```
-
-### Create backup before fixing
-```bash
+# Fix a file with backup
 imodent myfile.py --backup
-```
 
-### Check only (don't fix)
-```bash
+# Preview changes
+imodent myfile.py --dry-run
+
+# Check only (no fix)
 imodent myfile.py --check
+
+# Recursive directory scan
+imodent ./src --recursive --indent 2 --backup
+
+# Fix JSON
+imodent config.json --backup
 ```
 
-### Process directory recursively
-```bash
-imodent ./src --recursive --backup
+## Python API
+
+```python
+from imodent.pipeline import FixPipeline
+from imodent.registry import StrategyRegistry
+
+pipeline = FixPipeline(indent_size=4)
+
+# Fix content (auto-detects language)
+result = pipeline.fix(messy_code)
+
+# Check result
+if result.success:
+    print(result.content)
+else:
+    for error in result.errors:
+        print(f"Error: {error}")
 ```
 
-### Custom indent size
-```bash
-imodent myfile.py --indent 2
+## Add a New Language
+
+```python
+from imodent.interfaces import LanguageStrategy, FixResult
+from imodent.registry import StrategyRegistry
+
+@StrategyRegistry.register
+class RustStrategy(LanguageStrategy):
+    @property
+    def name(self) -> str:
+        return "rust"
+
+    @property
+    def extensions(self) -> list[str]:
+        return ['.rs']
+
+    def detect(self, content: str) -> bool:
+        return 'fn ' in content or 'impl ' in content
+
+    def fix(self, content: str, indent_size: int = 4) -> FixResult:
+        # Your fixing logic
+        return FixResult(success=True, content=content, errors=[], warnings=[],
+                         original_valid=True, fixed_valid=True)
+
+    def validate(self, content: str) -> tuple[bool, str | None]:
+        return True, None
 ```
+
+That's it — no core code changes. The strategy auto-registers and the pipeline picks it up.
+
+## CLI Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-i` | Indent size (spaces) | `4` |
+| `-b` | Create `.bak` backup | off |
+| `-n` | Dry run (preview only) | off |
+| `-c` | Check only (no fix) | off |
+| `-r` | Recursive directory scan | off |
 
 ## Supported Formats
 
-### Python
-- Fixes indentation based on AST structure
-- Handles decorators, docstrings, and continuation lines
-- Supports Python 3.10+ `match/case` syntax
-- Validates with `ast.parse()` before and after fixing
-
-### JSON
-- Pretty-prints minified JSON
-- Configurable indent size
-- Validates with `json.loads()`
-
-### JSONL (JSON Lines)
-- Fixes each line independently
-- Maintains one JSON object per line
-- Validates each line
-
-## API Usage
-
-```python
-from imodent import IndentationFixer
-
-fixer = IndentationFixer(default_indent=4)
-
-# Fix code
-fixed_code = fixer.fix(messy_code)
-
-# Check AST validity
-is_valid, error = fixer.check_ast(code)
-
-# Fix file with options
-from pathlib import Path
-fixer.fix_file(Path("myfile.py"), backup=True, dry_run=False)
-```
+| Format | Detection | Fixing | Validation |
+|--------|-----------|--------|------------|
+| **Python** | Keywords + AST parse | AST-based level detection | `ast.parse()` |
+| **JSON** | `{`/`[` + `json.loads()` | Pretty-print with indent | `json.loads()` |
+| **JSONL** | Each line valid JSON | Compact each line | `json.loads()` per line |
 
 ## License
 

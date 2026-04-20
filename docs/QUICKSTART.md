@@ -1,26 +1,17 @@
-# Quick Start Guide
+# Quick Start
 
-**Last Verified:** 2026-04-20  
-**Test Coverage:** 31 tests passing
+**Last Verified:** 2026-04-20
 
 ---
 
-## Installation
-
-No installation required! The tool is a single Python file.
+## Install
 
 ```bash
-# Clone or copy the repository
 cd /srv/imodent
-
-# Verify Python 3.10+ (required for match/case support)
-python3 --version
-# Expected: Python 3.10+
+pip install -e .
 ```
 
----
-
-## Your First Fix (2 Minutes)
+## Your First Fix
 
 ### Step 1: Create a messy file
 
@@ -35,214 +26,129 @@ pass
 EOF
 ```
 
-### Step 2: Preview the fix
+### Step 2: Preview
 
 ```bash
 imodent /tmp/messy.py --dry-run
 ```
 
-**Expected Output:**
-```
---- /tmp/messy.py ---
-def hello():
-    if True:
-        print("world")
-class Foo:
-    def bar(self):
-        pass
-```
-
-### Step 3: Apply the fix with backup
+### Step 3: Fix with backup
 
 ```bash
 imodent /tmp/messy.py --backup
+# Output:
+# Backup created: /tmp/messy.py.bak
+# Fixed: /tmp/messy.py
 ```
 
-**Expected Output:**
-```
-Backup created: /tmp/messy.py.bak
-Fixed: /tmp/messy.py
-```
-
-### Step 4: Verify the result
+### Step 4: Verify
 
 ```bash
-python3 -m py_compile /tmp/messy.py && echo "✓ Syntax OK"
-```
-
-**Expected Output:**
-```
-✓ Syntax OK
+imodent /tmp/messy.py --check
+# Output: ✓ /tmp/messy.py
 ```
 
 ---
 
-## Common Use Cases
-
-### Fix an entire project
+## Common Commands
 
 ```bash
+# Fix entire project
 imodent ./src --recursive --backup
-```
 
-**What it does:**
-- Scans `./src` and all subdirectories
-- Fixes all `.py`, `.json`, `.jsonl` files
-- Creates `.bak` backups before modifying
-
-### Fix with custom indent size (2 spaces)
-
-```bash
+# Custom indent (2 spaces)
 imodent myfile.py --indent 2
-```
 
-### Check syntax without modifying
-
-```bash
+# Check syntax only
 imodent myfile.py --check
-```
 
-**Expected Output:**
-```
-✓ myfile.py
-```
-or
-```
-✗ myfile.py
-```
-
-### Fix JSON configuration files
-
-```bash
+# Fix JSON
 imodent config.json --backup
-```
 
-**Input:**
-```json
-{"name":"myapp","version":"1.0.0","dependencies":{"express":"^4.0.0"}}
-```
-
-**Output:**
-```json
-{
-    "name": "myapp",
-    "version": "1.0.0",
-    "dependencies": {
-        "express": "^4.0.0"
-    }
-}
+# Preview JSON fix
+imodent config.json --dry-run
 ```
 
 ---
 
-## Python 3.10+ Features
-
-The tool fully supports modern Python syntax:
-
-### Async/Await
+## Python API
 
 ```python
-async def fetch():
-    async with aiohttp.ClientSession() as session:
-        async for item in session.iter_chunks():
-            match item.type:
-                case 'data':
-                    print(item.data)
-                case 'error':
-                    raise Exception(item.error)
+from imodent.pipeline import FixPipeline
+
+pipeline = FixPipeline(indent_size=4)
+
+# Fix code (auto-detects language)
+result = pipeline.fix(messy_code)
+
+if result.success:
+    print(result.content)
+else:
+    for err in result.errors:
+        print(f"Error: {err}")
 ```
-
-### Match/Case
-
-See above example - the tool correctly handles Python 3.10+ `match` statements.
 
 ---
 
-## Using as a Library
+## Add a New Language
 
 ```python
-from imodent import IndentationFixer
-from pathlib import Path
+from imodent.interfaces import LanguageStrategy, FixResult
+from imodent.registry import StrategyRegistry
 
-# Create fixer instance
-fixer = IndentationFixer(default_indent=4)
+@StrategyRegistry.register
+class RustStrategy(LanguageStrategy):
+    @property
+    def name(self) -> str:
+        return "rust"
 
-# Fix code string
-messy_code = '''def f():
-if True:
-print("hello")'''
-fixed_code = fixer.fix(messy_code)
+    @property
+    def extensions(self) -> list[str]:
+        return ['.rs']
 
-# Validate syntax
-is_valid, error = fixer.check_ast(fixed_code)
-if not is_valid:
-    print(f"Syntax error: {error}")
+    def detect(self, content: str) -> bool:
+        return 'fn ' in content
 
-# Fix file with options
-fixer.fix_file(
-    Path("myfile.py"),
-    backup=True,      # Create .bak file
-    dry_run=False,    # Actually write changes
-    check_only=False  # Modify the file
-)
+    def fix(self, content: str, indent_size: int = 4) -> FixResult:
+        # Your fixing logic
+        return FixResult(success=True, content=content, errors=[], warnings=[],
+                         original_valid=True, fixed_valid=True)
+
+    def validate(self, content: str) -> tuple[bool, str | None]:
+        return True, None
 ```
+
+No core changes needed — the pipeline auto-discovers registered strategies.
 
 ---
 
 ## Troubleshooting
 
-### "AST ERROR AFTER FIX" appears in output
+### "Could not parse AST" warning
 
-**Cause:** The original code has syntax errors that can't be fixed by indentation alone.
+The input has syntax errors beyond indentation. The tool falls back to heuristic indentation.
 
-**Solution:**
-1. Check the error message for the specific line
-2. Fix the syntax error manually
-3. Re-run the tool
+**Fix:** Repair syntax manually, then re-run.
 
-```bash
-# Example error
-# AST ERROR AFTER FIX: IndentationError: expected an indented block (line 3)
-def f():
-if True:
-print("x")  # ← Missing indentation
+### Wrong format detected
+
+The pipeline checks JSON → JSONL → Python (most specific first).
+
+**Fix:** Use the strategy directly:
+
+```python
+from imodent.strategies.json import JSONStrategy
+strategy = JSONStrategy()
+result = strategy.fix(content, indent_size=4)
 ```
-
-### File is not being detected as Python
-
-**Cause:** The file doesn't start with Python keywords (`def`, `class`, etc.).
-
-**Solution:**
-- Add a Python shebang or import at the top
-- Or rename the file with `.py` extension
-
-### Backup file not created
-
-**Cause:** `--backup` flag not used.
-
-**Solution:**
-```bash
-imodent myfile.py --backup
-```
-
----
-
-## Next Steps
-
-- **API Reference**: See `docs/API.md` for complete method documentation
-- **Tests**: Run `pytest tests/` to verify your installation
-- **Contributing**: See `CONTRIBUTING.md` (if applicable)
 
 ---
 
 ## Verification
 
-Run this command to verify the tool is working correctly:
-
 ```bash
-pytest tests/test_imodent.py -v
+pytest tests/test_modular.py -v
+# Expected: 18 passed
 ```
-
-**Expected:** 31 passed
 
 **Last Verified:** 2026-04-20

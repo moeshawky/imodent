@@ -1,297 +1,230 @@
 # API Reference
 
-**Source:** `imodent.py`  
+**Source:** `imodent/`  
 **Last Verified:** 2026-04-20  
-**Test Coverage:** 31 tests passing
+**Tests:** 18 passing
 
 ---
 
-## `IndentationFixer` Class
+## `FixPipeline`
 
-Smart imodent with AST-based validation for Python, JSON, and JSONL.
+Main entry point. Orchestrates detection → fixing → validation.
 
 ### Constructor
 
 ```python
-IndentationFixer(default_indent: int = 4)
+FixPipeline(indent_size: int = 4)
 ```
 
-**Parameters:**
-- `default_indent` (int): Number of spaces per indentation level (default: 4)
+**Source:** `imodent/pipeline.py`
 
-**Source:** `imodent.py:69-71`
+### `fix(content: str) -> FixResult`
 
----
+Auto-detect language and fix indentation.
 
-### `check_ast(code: str) -> Tuple[bool, str | None]`
-
-Validate Python code syntax using AST parsing.
-
-**Parameters:**
-- `code` (str): Python source code to validate
-
-**Returns:**
-- `Tuple[bool, str | None]`: `(is_valid, error_message)`
-  - `is_valid`: `True` if code is syntactically correct
-  - `error_message`: `None` if valid, otherwise `SyntaxError` description with line number
-
-**Source:** `imodent.py:73-79`
-
-**Example:**
 ```python
-from imodent import IndentationFixer
+from imodent.pipeline import FixPipeline
 
-fixer = IndentationFixer()
+pipeline = FixPipeline(indent_size=4)
+result = pipeline.fix('def f():\nif True:\npass')
 
-# Valid code
-is_valid, error = fixer.check_ast("def f():\n    pass")
-assert is_valid
-assert error is None
-
-# Invalid code
-is_valid, error = fixer.check_ast("def f():\nif True:\npass")
-assert not is_valid
-assert "IndentationError" in error
+if result.success:
+    print(result.content)
 ```
 
-**Verified:** 2026-04-20 (test: `TestErrorHandling.test_syntax_error_preserved`)
+### `validate(content: str) -> FixResult`
 
----
+Validate without fixing.
 
-### `fix(content: str) -> str`
-
-Main entry point. Auto-detects file type and fixes indentation.
-
-**Parameters:**
-- `content` (str): Source code (Python, JSON, or JSONL)
-
-**Returns:**
-- `str`: Fixed source code with proper indentation
-
-**Source:** `imodent.py:81-87`
-
-**Behavior:**
-1. Detects file type using `_detect_type()`
-2. Routes to appropriate fixer:
-   - Python → `_fix_python()`
-   - JSON → `_fix_json()`
-   - JSONL → `_fix_jsonl()`
-3. Validates output with AST (Python only)
-
-**Example:**
 ```python
-from imodent import IndentationFixer
-
-fixer = IndentationFixer()
-
-# Python
-messy = '''def f():
-if True:
-print("hello")'''
-fixed = fixer.fix(messy)
-# Output:
-# def f():
-#     if True:
-#         print("hello")
-
-# JSON
-minified = '{"a":1,"b":2}'
-pretty = fixer.fix(minified)
-# Output:
-# {
-#     "a": 1,
-#     "b": 2
-# }
-
-# JSONL
-jsonl = '{"a":1}\n{"b":2}'
-fixed = fixer.fix(jsonl)
-# Output:
-# {"a": 1}
-# {"b": 2}
+result = pipeline.validate('def f():\n    pass')
+print("✓" if result.success else "✗")
 ```
 
-**Verified:** 2026-04-20 (tests: `TestSemanticCorrectness.*`, `TestGoldenFiles.*`)
+### `detect(content: str) -> LanguageStrategy | None`
 
----
+Detect the language strategy for the content.
 
-### `fix_file(file_path: Path, backup: bool = True, dry_run: bool = False, check_only: bool = False)`
-
-Fix indentation in a file with optional backup and verification.
-
-**Parameters:**
-- `file_path` (Path): Path to file (or directory with `--recursive`)
-- `backup` (bool): Create `.bak` backup before modifying (default: `True`)
-- `dry_run` (bool): Preview changes without writing (default: `False`)
-- `check_only` (bool): Only validate, don't modify (default: `False`)
-
-**Source:** `imodent.py:227-245`
-
-**Behavior:**
-- **dry_run**: Prints fixed content to stdout
-- **check_only**: Validates and prints `✓` or `✗` status
-- **backup**: Copies file to `filename.bak` before modification
-- **recursive**: Processes all `.py`, `.json`, `.jsonl` files in directory
-
-**Example:**
 ```python
-from pathlib import Path
-from imodent import IndentationFixer
-
-fixer = IndentationFixer()
-
-# Preview changes
-fixer.fix_file(Path("myfile.py"), dry_run=True)
-
-# Create backup and fix
-fixer.fix_file(Path("myfile.py"), backup=True, dry_run=False)
-# Creates: myfile.py.bak
-
-# Check only (no modifications)
-fixer.fix_file(Path("myfile.py"), check_only=True)
-# Output: ✓ myfile.py
+strategy = pipeline.detect('{"a":1}')
+print(strategy.name)  # "json"
 ```
 
-**Verified:** 2026-04-20 (tests: `TestContext.test_backup_file_created`, `TestContext.test_dry_run_no_changes`)
+---
+
+## `FixResult`
+
+Typed result from all fix/validate operations.
+
+```python
+@dataclass
+class FixResult:
+    success: bool          # Did the operation succeed?
+    content: str           # The (possibly fixed) content
+    errors: List[str]      # Error messages
+    warnings: List[str]    # Warning messages
+    original_valid: bool   # Was the input valid?
+    fixed_valid: bool      # Is the output valid?
+```
+
+**Source:** `imodent/interfaces.py`
 
 ---
 
-## Private Methods (Internal Use)
+## `LanguageStrategy` (Abstract Base)
 
-### `_detect_type(content: str) -> Literal["json", "jsonl", "python"]`
+Implement this to add a new language. Three required methods:
 
-Auto-detect file format.
+| Method | Signature | Purpose |
+|--------|-----------|---------|
+| `detect` | `(content: str) -> bool` | Can this strategy handle the content? |
+| `fix` | `(content: str, indent_size: int) -> FixResult` | Fix indentation |
+| `validate` | `(content: str) -> Tuple[bool, str \| None]` | Validate syntax |
 
-**Detection Logic:**
-1. **Python**: Starts with `def `, `class `, `import `, `from `, `@`, or `if __name__`
-2. **JSON**: Starts with `{` or `[` and parses successfully
-3. **JSONL**: Multiple lines, each parses as valid JSON
-4. **Default**: Python
+Plus two properties:
 
-**Source:** `imodent.py:90-112`
+| Property | Type | Purpose |
+|----------|------|---------|
+| `name` | `str` | Unique identifier (e.g. `"python"`) |
+| `extensions` | `List[str]` | File extensions (e.g. `[".py"]`) |
 
----
-
-### `_fix_python(content: str) -> str`
-
-Fix Python indentation using AST structure.
-
-**Features:**
-- AST-based level detection
-- Handles: `def`, `class`, `if`, `for`, `while`, `with`, `try`, `match`, `async def`, `async for`, `async with`
-- Preserves: decorators, comments, blank lines
-- Validates: before and after with `ast.parse()`
-
-**Source:** `imodent.py:139-155`
+**Source:** `imodent/interfaces.py`
 
 ---
 
-### `_fix_json(content: str) -> str`
+## `StrategyRegistry`
 
-Pretty-print JSON with configurable indent.
+Centralized registry for language strategies. Strategies auto-register via decorator.
 
-**Source:** `imodent.py:127-129`
+### `@StrategyRegistry.register`
+
+```python
+from imodent.interfaces import LanguageStrategy
+from imodent.registry import StrategyRegistry
+
+@StrategyRegistry.register
+class MyStrategy(LanguageStrategy):
+    ...
+```
+
+### `StrategyRegistry.get(name: str)`
+
+Get a strategy class by name.
+
+### `StrategyRegistry.get_by_extension(ext: str)`
+
+Get a strategy class by file extension.
+
+### `StrategyRegistry.all()`
+
+List all registered strategy classes.
+
+**Source:** `imodent/registry.py`
 
 ---
 
-### `_fix_jsonl(content: str) -> str`
+## `Processor` (Abstract Base)
 
-Fix each line of JSON Lines independently.
+For future functionality beyond indentation (linting, formatting, etc.).
 
-**Source:** `imodent.py:131-140`
+```python
+from imodent.interfaces import Processor, FixResult
+
+class LintProcessor(Processor):
+    @property
+    def name(self) -> str:
+        return "lint"
+
+    def process(self, content: str, strategy: LanguageStrategy) -> FixResult:
+        # Your logic here
+        ...
+```
+
+**Source:** `imodent/interfaces.py`
 
 ---
 
-## CLI Interface
+## Built-in Strategies
 
-### Usage
+### `PythonStrategy`
+
+- **Name:** `"python"`
+- **Extensions:** `.py`, `.pyw`, `.pyi`
+- **Detection:** Python keywords + AST parse fallback
+- **Fixing:** AST-based level detection, handles `def`, `class`, `if`, `for`, `while`, `with`, `try`, `match`, `async def`, `async for`, `async with`, decorators, continuation lines
+- **Validation:** `ast.parse()`
+
+**Source:** `imodent/strategies/python.py`
+
+### `JSONStrategy`
+
+- **Name:** `"json"`
+- **Extensions:** `.json`
+- **Detection:** Starts with `{` or `[`, parses with `json.loads()`
+- **Fixing:** Pretty-print with configurable indent
+- **Validation:** `json.loads()`
+
+**Source:** `imodent/strategies/json.py`
+
+### `JSONLStrategy`
+
+- **Name:** `"jsonl"`
+- **Extensions:** `.jsonl`, `.ndjson`
+- **Detection:** Multiple lines, each valid JSON
+- **Fixing:** Compact each line independently
+- **Validation:** `json.loads()` per line
+
+**Source:** `imodent/strategies/jsonl.py`
+
+---
+
+## CLI
 
 ```bash
-python3 imodent.py <path> [options]
+imodent <path> [options]
 ```
-
-### Options
 
 | Flag | Argument | Description | Default |
 |------|----------|-------------|---------|
-| `-h` | | Show help | - |
 | `-i` | `INDENT` | Indent size (spaces) | `4` |
-| `-b` | | Create `.bak` backup | `False` |
-| `-n` | | Dry run (preview only) | `False` |
-| `-c` | | Check only (no fix) | `False` |
-| `-r` | | Recursive directory scan | `False` |
+| `-b` | | Create `.bak` backup | off |
+| `-n` | | Dry run (preview only) | off |
+| `-c` | | Check only (no fix) | off |
+| `-r` | | Recursive directory scan | off |
 
 ### Examples
 
 ```bash
-# Fix a single file with backup
-python3 imodent.py myfile.py --backup
-
-# Preview changes
-python3 imodent.py myfile.py --dry-run
-
-# Check only (validate syntax)
-python3 imodent.py myfile.py --check
-
-# Process directory recursively with 2-space indent
-python3 imodent.py ./src --recursive --indent 2 --backup
-
-# Fix JSON file
-python3 imodent.py config.json --backup
+imodent myfile.py --backup
+imodent myfile.py --dry-run
+imodent myfile.py --check
+imodent ./src --recursive --indent 2 --backup
+imodent config.json --backup
 ```
-
-**Source:** `imodent.py:248-268`
 
 ---
 
 ## Error Handling
 
-### Failure Modes
-
-| Error Type | Condition | Response |
-|------------|-----------|----------|
-| `SyntaxError` | Invalid Python syntax | Returns code with `# AST ERROR AFTER FIX: ...` prefix |
-| `JSONDecodeError` | Invalid JSON | Falls back to Python detection |
-| `FileNotFoundError` | File doesn't exist | Raises `FileNotFoundError` |
-| `IndentationError` | Uncorrectable indent | Returns original code with error message |
-
-**Source:** `imodent.py:145-155`
-
-**Example:**
-```python
-fixer = IndentationFixer()
-result = fixer.fix("def f():\nif True:\npass")
-# Output: "# AST ERROR AFTER FIX: IndentationError: ...\ndef f():\nif True:\npass"
-```
+| Error | Condition | Result |
+|-------|-----------|--------|
+| `FixResult.success=False` | Fix fails validation | Content still returned, errors populated |
+| `FixResult.errors` | Non-empty list | Check for specific failure messages |
+| `FixResult.warnings` | Non-empty list | Heuristic fallback used, etc. |
 
 ---
 
-## Performance Characteristics
-
-| Metric | Value | Measurement |
-|--------|-------|-------------|
-| **Time Complexity** | O(n) where n = lines | Single pass through file |
-| **Memory Usage** | O(n) | AST tree + line list |
-| **Validation Overhead** | ~5ms per 100 lines | AST parse before/after |
-
-**Measured:** 2026-04-20 (31 tests, all passing)
-
----
-
-## Verification Commands
+## Verification
 
 ```bash
-# Run all tests
-pytest tests/test_imodent.py -v
-
-# Test specific API
-pytest tests/test_imodent.py::TestSemanticCorrectness -v
+# Run tests
+pytest tests/test_modular.py -v
 
 # Verify CLI
-python3 imodent.py --help
+imodent -h
 
 # Test idempotency
-python3 -c "from imodent import IndentationFixer; f=IndentationFixer(); r1=f.fix('def f():\npass'); r2=f.fix(r1); assert r1==r2"
+imodent /tmp/test.py --dry-run
 ```
 
 **Last Verified:** 2026-04-20
