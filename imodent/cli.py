@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 # Import strategies to register them (critical!) 
-from .strategies import PythonStrategy, JSONStrategy, JSONLStrategy
+from .strategies import PythonStrategy, JSONStrategy, JSONLStrategy, YAMLStrategy
 
 from .interfaces import FixResult
 from .pipeline import FixPipeline
@@ -38,7 +38,7 @@ def fix_file(
     if file_path.is_dir():
         # Process directory
         for file in file_path.glob("**/*"):
-            if file.is_file() and file.suffix.lower() in ['.py', '.pyw', '.pyi', '.json', '.jsonl', '.ndjson']:
+            if file.is_file() and file.suffix.lower() in ['.py', '.pyw', '.pyi', '.json', '.jsonl', '.ndjson', '.yaml', '.yml']:
                 _process_file(pipeline, file, backup, dry_run, check_only)
     else:
         _process_file(pipeline, file_path, backup, dry_run, check_only)
@@ -78,7 +78,7 @@ def _process_file(
                 print(f"  {warning}")
         return
     
-    if backup and file_path.suffix.lower() in ['.py', '.pyw', '.pyi', '.json', '.jsonl', '.ndjson']:
+    if backup and file_path.suffix.lower() in ['.py', '.pyw', '.pyi', '.json', '.jsonl', '.ndjson', '.yaml', '.yml']:
         bak = file_path.with_suffix(file_path.suffix + '.bak')
         shutil.copy2(file_path, bak)
         print(f"Backup created: {bak}")
@@ -99,7 +99,7 @@ def _process_file(
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
-        description="imodent — smart indentation fixer (Python, JSON, JSONL)"
+        description="imodent — smart indentation fixer"
     )
     parser.add_argument("path", type=Path, help="File or directory to fix")
     parser.add_argument("-i", "--indent", type=int, default=4, help="Indent size (default: 4)")

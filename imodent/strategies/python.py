@@ -120,7 +120,7 @@ class PythonStrategy(LanguageStrategy):
             return bool(re.search(r'^\s*(def|class|if|for|while|with|try|async|elif|else|except|finally)\s', content, re.MULTILINE))
 
     def fix(self, content: str, indent_size: int = 4) -> FixResult:
-        """Fix Python indentation."""
+        """Fix Python indentation using black first, then our AST logic as fallback."""
         errors = []
         warnings = []
         
@@ -130,18 +130,39 @@ class PythonStrategy(LanguageStrategy):
             if "indent" not in original_error.lower():
                 warnings.append(f"Original code has syntax error: {original_error}")
         
-        # Parse and get AST info
+        # STAGE 1: Try black first (it handles complex formatting)
+        try:
+            import black
+            fixed = black.format_str(content, mode=black.Mode())
+            
+            # Validate black's output
+            is_valid, error = self.validate(fixed)
+            if is_valid:
+                return FixResult(
+                    success=True,
+                    content=fixed,
+                    errors=errors,
+                    warnings=warnings,
+                    original_valid=original_valid,
+                    fixed_valid=True
+                )
+            else:
+                warnings.append(f"Black output invalid: {error}, falling back to internal logic")
+        except ImportError:
+            warnings.append("black not installed, using internal AST logic")
+        except Exception as e:
+            warnings.append(f"Black failed: {e}, falling back to internal logic")
+        
+        # STAGE 2: Fallback to our AST-based fixer
         try:
             tree = ast.parse(content)
             visitor = ASTStructureVisitor()
             visitor.run(tree)
             ast_info = {'levels': visitor.line_to_level, 'block_starts': visitor.block_starts}
         except SyntaxError:
-            # Try to fix anyway using heuristic
             ast_info = {'levels': {}, 'block_starts': set()}
             warnings.append("Could not parse AST, using heuristic indentation")
         
-        # Fix indentation
         fixed = self._reindent(content, ast_info, indent_size)
         
         # Validate fixed

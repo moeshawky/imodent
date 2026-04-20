@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "imodent"
 version = "1.0.0"
-description = "Smart Python + JSON/JSONL indentation fixer with extensible plugin architecture"
+description = "Smart indentation fixer with extensible plugin architecture"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "imodent contributors"}
 ]
-keywords = ["indentation", "formatter", "python", "json", "ast"]
+keywords = ["indentation", "formatter", "python", "json", "yaml", "ast"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -24,6 +24,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "black>=23.0",
+    "ruamel.yaml>=0.18",
+    "json-repair>=0.20",
 ]
 
 [project.scripts]

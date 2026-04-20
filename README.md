@@ -1,12 +1,13 @@
 # imodent
 
-Smart indentation fixer for Python, JSON, and JSONL — with extensible plugin architecture.
+Smart indentation fixer — with extensible plugin architecture.
 
 ## Features
 
-- **Auto-detection**: Detects Python, JSON, or JSONL automatically
+- **Auto-detection**: Detects Python, JSON, JSONL, YAML automatically
 - **AST-based validation**: Python code validated with `ast.parse()` before and after fixing
 - **Python 3.10+ support**: `async/await`, `match/case`, decorators, continuation lines
+- **YAML support**: Proper list indentation via PyYAML
 - **Extensible**: Add new languages via `@StrategyRegistry.register` — no core changes needed
 - **CLI**: `imodent file.py --backup` after `pip install -e .`
 
@@ -33,20 +34,21 @@ imodent ./src --recursive --indent 2 --backup
 
 # Fix JSON
 imodent config.json --backup
+
+# Fix YAML
+imodent docker-compose.yml --backup
 ```
 
 ## Python API
 
 ```python
 from imodent.pipeline import FixPipeline
-from imodent.registry import StrategyRegistry
 
 pipeline = FixPipeline(indent_size=4)
 
 # Fix content (auto-detects language)
 result = pipeline.fix(messy_code)
 
-# Check result
 if result.success:
     print(result.content)
 else:
@@ -61,17 +63,17 @@ from imodent.interfaces import LanguageStrategy, FixResult
 from imodent.registry import StrategyRegistry
 
 @StrategyRegistry.register
-class RustStrategy(LanguageStrategy):
+class TOMLStrategy(LanguageStrategy):
     @property
     def name(self) -> str:
-        return "rust"
+        return "toml"
 
     @property
     def extensions(self) -> list[str]:
-        return ['.rs']
+        return ['.toml']
 
     def detect(self, content: str) -> bool:
-        return 'fn ' in content or 'impl ' in content
+        return '[[' in content or '=' in content
 
     def fix(self, content: str, indent_size: int = 4) -> FixResult:
         # Your fixing logic
@@ -82,7 +84,7 @@ class RustStrategy(LanguageStrategy):
         return True, None
 ```
 
-That's it — no core code changes. The strategy auto-registers and the pipeline picks it up.
+No core changes needed — the strategy auto-registers and the pipeline picks it up.
 
 ## CLI Options
 
@@ -101,6 +103,7 @@ That's it — no core code changes. The strategy auto-registers and the pipeline
 | **Python** | Keywords + AST parse | AST-based level detection | `ast.parse()` |
 | **JSON** | `{`/`[` + `json.loads()` | Pretty-print with indent | `json.loads()` |
 | **JSONL** | Each line valid JSON | Compact each line | `json.loads()` per line |
+| **YAML** | `---` or key patterns + `yaml.safe_load()` | Pretty-print with proper list indent | `yaml.safe_load()` |
 
 ## License
 

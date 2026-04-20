@@ -23,7 +23,7 @@ class LanguageStrategy(ABC):
     """
     Abstract base class for language-specific indentation fixing.
     
-    Each language (Python, JSON, JSONL, etc.) implements this interface
+    Each language (Python, JSON, JSONL, YAML, etc.) implements this interface
     to provide its own detection, fixing, and validation logic.
     """
     

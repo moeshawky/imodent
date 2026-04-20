@@ -40,10 +40,40 @@ class JSONStrategy(LanguageStrategy):
             return False
 
     def fix(self, content: str, indent_size: int = 4) -> FixResult:
-        """Fix JSON formatting."""
+        """Fix JSON formatting using json-repair first, then our logic as fallback."""
+        import json
+        
         errors = []
         warnings = []
         
+        # STAGE 1: Try json-repair first (fixes broken JSON)
+        try:
+            import json_repair
+            
+            repaired = json_repair.repair_json(content, return_objects=False)
+            
+            # Validate repaired JSON
+            try:
+                data = json.loads(repaired)
+                fixed = json.dumps(data, indent=indent_size, ensure_ascii=False) + "\n"
+                
+                return FixResult(
+                    success=True,
+                    content=fixed,
+                    errors=errors,
+                    warnings=warnings,
+                    original_valid=True,
+                    fixed_valid=True
+                )
+            except json.JSONDecodeError as e:
+                warnings.append(f"json-repair output invalid: {e}, falling back to internal logic")
+                
+        except ImportError:
+            warnings.append("json-repair not installed, using standard json")
+        except Exception as e:
+            warnings.append(f"json-repair failed: {e}, falling back to internal logic")
+        
+        # STAGE 2: Fallback to standard json
         try:
             data = json.loads(content)
             fixed = json.dumps(data, indent=indent_size, ensure_ascii=False) + "\n"
