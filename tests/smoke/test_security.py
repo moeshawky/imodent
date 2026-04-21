@@ -38,7 +38,9 @@ class TestNoUnsafeOperations:
                     if isinstance(node, ast.Import):
                         for alias in node.names:
                             if "subprocess" in alias.name:
-                                pytest.fail(f"{py_file.name} imports subprocess — unsafe")
+                                pytest.fail(
+                                    f"{py_file.name} imports subprocess — unsafe"
+                                )
 
     def test_no_os_system(self):
         """No os.system() calls."""
@@ -50,17 +52,20 @@ class TestNoUnsafeOperations:
     def test_backup_writes_to_same_directory(self):
         """Backups must be written adjacent to source, not arbitrary paths."""
         from imodent.cli import fix_file
+
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             test_file = tmpdir / "test.py"
             test_file.write_text("def f():\n    pass")
-            
+
             fix_file(test_file, backup=True, dry_run=False)
-            
+
             bak = tmpdir / "test.py.bak"
             assert bak.exists(), "Backup not created in same directory"
             # Backup should NOT be outside tmpdir
-            assert str(bak).startswith(str(tmpdir)), "Backup written outside source directory"
+            assert str(bak).startswith(
+                str(tmpdir)
+            ), "Backup written outside source directory"
 
 
 class TestPathSafety:
@@ -69,12 +74,14 @@ class TestPathSafety:
     def test_fix_file_rejects_nonexistent(self):
         """fix_file handles nonexistent paths gracefully."""
         from imodent.cli import fix_file
+
         # Should not crash, just print error
         fix_file(Path("/nonexistent/path/file.py"), backup=False)
 
     def test_analyzer_rejects_unreadable(self):
         """Analyzer handles unreadable files gracefully."""
         from imodent.analysis.coordinator import AnalysisCoordinator
+
         coordinator = AnalysisCoordinator()
         # nonexistent file in paths — should not crash
         result = coordinator.analyze([Path("/nonexistent/file.py")])

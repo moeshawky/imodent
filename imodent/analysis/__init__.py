@@ -6,7 +6,7 @@ from .coordinator import AnalysisCoordinator, AnalysisResult, FixMode
 
 __all__ = [
     "AnalysisContext",
-    "AnalysisConfig", 
+    "AnalysisConfig",
     "FileInfo",
     "DependencyGraph",
     "Finding",

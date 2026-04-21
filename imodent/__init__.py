@@ -5,17 +5,25 @@ Core package for language detection, fixing, and validation.
 Now with multi-file analysis, import analysis, and advisory capabilities.
 """
 
-from .interfaces import (
-    LanguageStrategy, Processor, FixResult
-)
+from .interfaces import LanguageStrategy, Processor, FixResult
 from .registry import StrategyRegistry, ProcessorRegistry
 from .pipeline import FixPipeline
 
 # Analysis components
 from .analysis import (
-    AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph,
-    Finding, Severity, Location, FixOption, Advice, Change,
-    AnalysisCoordinator, AnalysisResult, FixMode
+    AnalysisContext,
+    AnalysisConfig,
+    FileInfo,
+    DependencyGraph,
+    Finding,
+    Severity,
+    Location,
+    FixOption,
+    Advice,
+    Change,
+    AnalysisCoordinator,
+    AnalysisResult,
+    FixMode,
 )
 
 __all__ = [

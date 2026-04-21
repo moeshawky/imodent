@@ -30,7 +30,7 @@ from typing import List, Optional
 """
         imports = extract_imports(source, Path("/tmp/test.py"))
         modules = [(i.module, i.name, i.is_from_import) for i in imports]
-        
+
         assert ("os", None, False) in modules
         assert ("sys", None, False) in modules
         assert ("pathlib", "Path", True) in modules
@@ -50,10 +50,10 @@ import sys
 
     def test_does_not_detect_strings_as_imports(self):
         """Strings that look like imports are not extracted."""
-        source = '''x = "import os"
+        source = """x = "import os"
 y = "from typing import List"
 import sys
-'''
+"""
         imports = extract_imports(source, Path("/tmp/test.py"))
         assert len(imports) == 1
         assert imports[0].module == "sys"
@@ -69,17 +69,19 @@ import os
 """
         analyzer = ImportAnalyzer()
         from imodent.analysis.context import AnalysisContext, FileInfo, DependencyGraph
+
         py_file = Path("/tmp/test.py")
         try:
-            tree = __import__('ast').parse(source)
+            tree = __import__("ast").parse(source)
         except SyntaxError:
             tree = None
         context = AnalysisContext(
-            files={py_file: FileInfo(
-                path=py_file, content=source, language='python',
-                ast_tree=tree
-            )},
-            graph=DependencyGraph()
+            files={
+                py_file: FileInfo(
+                    path=py_file, content=source, language="python", ast_tree=tree
+                )
+            },
+            graph=DependencyGraph(),
         )
         findings = analyzer.analyze(context)
         duplicates = [f for f in findings if f.type == "duplicate_import"]
@@ -104,15 +106,18 @@ class TestRegistryLazyLoadingSemantics:
         """FixPipeline works when imported directly (the bug we fixed)."""
         # Fresh import — no strategy side-effects from test file
         from imodent.pipeline import FixPipeline
+
         pipeline = FixPipeline()
-        result = pipeline.fix('def f():\n    pass')
-        assert result.success, "Lazy loading bug: strategies not registered on first use"
+        result = pipeline.fix("def f():\n    pass")
+        assert (
+            result.success
+        ), "Lazy loading bug: strategies not registered on first use"
 
     def test_registry_clear_then_reload(self):
         """After clear(), next access reloads built-in strategies."""
         StrategyRegistry.clear()
         assert len(StrategyRegistry._strategies) == 0
-        
+
         # Trigger reload via get()
         strategy = StrategyRegistry.get("python")
         assert strategy is not None
@@ -122,10 +127,10 @@ class TestRegistryLazyLoadingSemantics:
         """Calling _load_builtins twice doesn't double-register."""
         StrategyRegistry._load_builtins()
         count_after_first = len(StrategyRegistry._strategies)
-        
+
         StrategyRegistry._load_builtins()
         count_after_second = len(StrategyRegistry._strategies)
-        
+
         assert count_after_first == count_after_second
 
 
@@ -135,20 +140,28 @@ class TestFixModeSemantics:
     def test_safe_auto_only_fixes_safe_findings(self):
         """SAFE_AUTO mode only fixes findings where auto_fix_safe=True."""
         fixer = ImportFixer()
-        
+
         # duplicate_import: auto_fix_safe=True
         dup = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="dup",
-            location=Location(line=2), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="dup",
+            location=Location(line=2),
+            fixable=True,
+            auto_fix_safe=True,
         )
         assert fixer.can_auto_fix(dup) is True
-        
+
         # unused_import: auto_fix_safe=False (needs review)
         unused = Finding.create(
-            type="unused_import", severity=Severity.INFO,
-            file=Path("/tmp/test.py"), message="unused",
-            location=Location(line=1), fixable=True, auto_fix_safe=False
+            type="unused_import",
+            severity=Severity.INFO,
+            file=Path("/tmp/test.py"),
+            message="unused",
+            location=Location(line=1),
+            fixable=True,
+            auto_fix_safe=False,
         )
         assert fixer.can_auto_fix(unused) is False
 
@@ -157,9 +170,13 @@ class TestFixModeSemantics:
         fixer = ImportFixer()
         content = "import os\nimport sys\nimport json\n\ndef f(): pass\n"
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="remove sys",
-            location=Location(line=2), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="remove sys",
+            location=Location(line=2),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], content)
@@ -176,7 +193,7 @@ class TestIdempotency:
     def test_indentation_fix_idempotent(self):
         """Fixing already-fixed code doesn't change it further."""
         pipeline = FixPipeline()
-        code = 'def f():\n    pass\n'
+        code = "def f():\n    pass\n"
         result1 = pipeline.fix(code)
         result2 = pipeline.fix(result1.content)
         assert result1.content == result2.content
@@ -186,9 +203,13 @@ class TestIdempotency:
         fixer = ImportFixer()
         content = "import os\nimport sys\n\ndef f(): pass\n"
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="dup",
-            location=Location(line=1), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="dup",
+            location=Location(line=1),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result1 = fixer.apply_fix(finding, options[0], content)

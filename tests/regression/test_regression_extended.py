@@ -71,17 +71,21 @@ class TestGoldenOutputStability:
 class TestImportCountConsistency:
     """Import extraction count is consistent."""
 
-    @pytest.mark.parametrize("source,expected_count", [
-        ("import os", 1),
-        ("import os\nimport sys", 2),
-        ("from typing import List", 1),
-        ("from typing import List, Dict", 2),
-        ("import os\nfrom pathlib import Path", 2),
-        ("", 0),
-        ("# import os", 0),
-    ])
+    @pytest.mark.parametrize(
+        "source,expected_count",
+        [
+            ("import os", 1),
+            ("import os\nimport sys", 2),
+            ("from typing import List", 1),
+            ("from typing import List, Dict", 2),
+            ("import os\nfrom pathlib import Path", 2),
+            ("", 0),
+            ("# import os", 0),
+        ],
+    )
     def test_import_count(self, source, expected_count):
         """Import count matches expected for known inputs."""
         imports = extract_imports(source, Path("/tmp/test.py"))
-        assert len(imports) == expected_count, \
-            f"Expected {expected_count} imports, got {len(imports)}: {[i.import_statement for i in imports]}"
+        assert (
+            len(imports) == expected_count
+        ), f"Expected {expected_count} imports, got {len(imports)}: {[i.import_statement for i in imports]}"

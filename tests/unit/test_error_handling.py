@@ -21,13 +21,16 @@ class TestAnalyzerErrorHandling:
     def test_analyzer_with_empty_content(self):
         """ImportAnalyzer handles empty file content."""
         from imodent.analyzers.imports import ImportAnalyzer
+
         analyzer = ImportAnalyzer()
         py_file = Path("/tmp/empty.py")
         context = AnalysisContext(
-            files={py_file: FileInfo(
-                path=py_file, content="", language='python', ast_tree=None
-            )},
-            graph=DependencyGraph()
+            files={
+                py_file: FileInfo(
+                    path=py_file, content="", language="python", ast_tree=None
+                )
+            },
+            graph=DependencyGraph(),
         )
         findings = analyzer.analyze(context)
         assert isinstance(findings, list)  # Never crashes
@@ -35,14 +38,20 @@ class TestAnalyzerErrorHandling:
     def test_analyzer_with_binary_content(self):
         """ImportAnalyzer handles binary-like content."""
         from imodent.analyzers.imports import ImportAnalyzer
+
         analyzer = ImportAnalyzer()
         py_file = Path("/tmp/binary.py")
         context = AnalysisContext(
-            files={py_file: FileInfo(
-                path=py_file, content="\x00\x01\x02", language='python',
-                has_syntax_errors=True, ast_tree=None
-            )},
-            graph=DependencyGraph()
+            files={
+                py_file: FileInfo(
+                    path=py_file,
+                    content="\x00\x01\x02",
+                    language="python",
+                    has_syntax_errors=True,
+                    ast_tree=None,
+                )
+            },
+            graph=DependencyGraph(),
         )
         findings = analyzer.analyze(context)
         assert isinstance(findings, list)  # Never crashes
@@ -61,9 +70,13 @@ class TestFixerErrorHandling:
         """ImportFixer handles line number beyond file length."""
         fixer = ImportFixer()
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="dup",
-            location=Location(line=9999), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="dup",
+            location=Location(line=9999),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], "import os\n")
@@ -74,9 +87,13 @@ class TestFixerErrorHandling:
         """ImportFixer handles line number 0."""
         fixer = ImportFixer()
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="dup",
-            location=Location(line=0), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="dup",
+            location=Location(line=0),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], "import os\n")
@@ -86,14 +103,22 @@ class TestFixerErrorHandling:
         """ImportFixer handles unknown fix action."""
         fixer = ImportFixer()
         from imodent.analysis.findings import FixOption
+
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="dup",
-            location=Location(line=1), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="dup",
+            location=Location(line=1),
+            fixable=True,
+            auto_fix_safe=True,
         )
         bad_option = FixOption(
-            id="bad", label="Bad", description="Bad action",
-            action="explode", is_safe=False
+            id="bad",
+            label="Bad",
+            description="Bad action",
+            action="explode",
+            is_safe=False,
         )
         result = fixer.apply_fix(finding, bad_option, "import os\n")
         assert not result.success
@@ -110,7 +135,7 @@ class TestCLIErrorHandling:
 
     def test_fix_empty_file(self):
         """fix_file with empty file doesn't crash."""
-        with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode='w') as f:
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as f:
             f.write("")
             f.flush()
             # Should not crash
@@ -118,7 +143,7 @@ class TestCLIErrorHandling:
 
     def test_fix_file_with_syntax_errors(self):
         """fix_file handles files with syntax errors."""
-        with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode='w') as f:
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as f:
             f.write("def f(\n  pass\n")
             f.flush()
             # Should not crash — may fall back to heuristic
@@ -131,6 +156,7 @@ class TestPipelineErrorHandling:
     def test_unrecognizable_content(self):
         """Pipeline returns error for unrecognizable content, doesn't crash."""
         from imodent import FixPipeline
+
         pipeline = FixPipeline()
         result = pipeline.fix("this is not any known format {{{")
         assert not result.success
@@ -139,6 +165,7 @@ class TestPipelineErrorHandling:
     def test_empty_content(self):
         """Pipeline handles empty content."""
         from imodent import FixPipeline
+
         pipeline = FixPipeline()
         result = pipeline.fix("")
         # Should not crash — may return success or failure

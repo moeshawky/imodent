@@ -24,6 +24,7 @@ from .analysis.findings import Severity
 # Mode 1: FIX — reformat files (backward-compatible)
 # ---------------------------------------------------------------------------
 
+
 def fix_file(
     file_path: Path,
     indent_size: int = 4,
@@ -43,7 +44,9 @@ def _collect_targets(file_path: Path) -> list[Path]:
     handled = {".py", ".pyw", ".pyi", ".json", ".jsonl", ".ndjson", ".yaml", ".yml"}
     if file_path.is_file():
         return [file_path]
-    return sorted(f for f in file_path.glob("**/*") if f.is_file() and f.suffix.lower() in handled)
+    return sorted(
+        f for f in file_path.glob("**/*") if f.is_file() and f.suffix.lower() in handled
+    )
 
 
 def _process_file(pipeline, file_path, backup, dry_run, check_only):
@@ -70,7 +73,14 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only):
         return
 
     if backup and file_path.suffix.lower() in {
-        ".py", ".pyw", ".pyi", ".json", ".jsonl", ".ndjson", ".yaml", ".yml"
+        ".py",
+        ".pyw",
+        ".pyi",
+        ".json",
+        ".jsonl",
+        ".ndjson",
+        ".yaml",
+        ".yml",
     }:
         bak = file_path.with_suffix(file_path.suffix + ".bak")
         shutil.copy2(file_path, bak)
@@ -87,6 +97,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only):
 # ---------------------------------------------------------------------------
 # Mode 2: SCAN — multi-file analysis
 # ---------------------------------------------------------------------------
+
 
 def analyze_files(
     paths: list[Path],
@@ -132,6 +143,7 @@ def analyze_files(
     # ── Advisory ─────────────────────────────────────────────────────────
     if advisory:
         from .advisors.architecture import ArchitectureAdvisor
+
         advisor = ArchitectureAdvisor()
         if advisor.should_advise(result.findings, result.context):
             print("\n" + "━" * 60)
@@ -150,7 +162,9 @@ def analyze_files(
         print("\n" + "━" * 60)
         print("APPLYING FIXES")
         print("━" * 60)
-        fix_results = coordinator.fix(result.findings, result.context, mode=FixMode.SAFE_AUTO)
+        fix_results = coordinator.fix(
+            result.findings, result.context, mode=FixMode.SAFE_AUTO
+        )
         for file_path, fix_result in fix_results.items():
             if not fix_result.success:
                 print(f"  ✗ {file_path}")
@@ -247,28 +261,34 @@ def main():
     # ── FIX mode flags (backward-compatible) ─────────────────────────────
     fix_group = parser.add_argument_group("fix mode", "reformat & repair files")
     fix_group.add_argument(
-        "-i", "--indent",
-        type=int, default=4,
+        "-i",
+        "--indent",
+        type=int,
+        default=4,
         metavar="N",
         help="spaces per indent level (default: 4)",
     )
     fix_group.add_argument(
-        "-b", "--backup",
+        "-b",
+        "--backup",
         action="store_true",
         help="create .bak before writing",
     )
     fix_group.add_argument(
-        "-n", "--dry-run",
+        "-n",
+        "--dry-run",
         action="store_true",
         help="preview output, don't write",
     )
     fix_group.add_argument(
-        "-c", "--check",
+        "-c",
+        "--check",
         action="store_true",
         help="validate syntax only, no changes",
     )
     fix_group.add_argument(
-        "-r", "--recursive",
+        "-r",
+        "--recursive",
         action="store_true",
         help="walk subdirectories",
     )
@@ -306,7 +326,8 @@ def main():
         help="prompt before each ambiguous fix",
     )
     scan_group.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="show all findings, not just top 10",
     )

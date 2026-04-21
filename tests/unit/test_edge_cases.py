@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from imodent.analysis.context import FileInfo, DependencyGraph, AnalysisContext, AnalysisConfig
+from imodent.analysis.context import (
+    FileInfo,
+    DependencyGraph,
+    AnalysisContext,
+    AnalysisConfig,
+)
 from imodent.analysis.findings import Finding, Severity, Location, FixOption
 from imodent.analysis.coordinator import AnalysisCoordinator, FixMode
 from imodent.analyzers.imports import ImportAnalyzer
@@ -20,13 +25,16 @@ from imodent.graph.imports import extract_imports, resolve_module_name
 class TestImportExtractorEdgeCases:
     """Import extraction must handle every edge case."""
 
-    @pytest.mark.parametrize("source", [
-        "",                          # empty file
-        "\n\n\n",                    # whitespace only
-        "# just a comment",          # comment only
-        "pass",                      # bare statement
-        "x = 1",                     # no imports
-    ])
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "",  # empty file
+            "\n\n\n",  # whitespace only
+            "# just a comment",  # comment only
+            "pass",  # bare statement
+            "x = 1",  # no imports
+        ],
+    )
     def test_no_imports_found(self, source):
         """Files with no imports return empty list."""
         imports = extract_imports(source, Path("/tmp/test.py"))
@@ -94,10 +102,10 @@ class TestImportAnalyzerEdgeCases:
         analyzer = ImportAnalyzer()
         json_file = Path("/tmp/test.json")
         context = AnalysisContext(
-            files={json_file: FileInfo(
-                path=json_file, content='{"a": 1}', language='json'
-            )},
-            graph=DependencyGraph()
+            files={
+                json_file: FileInfo(path=json_file, content='{"a": 1}', language="json")
+            },
+            graph=DependencyGraph(),
         )
         findings = analyzer.analyze(context)
         assert findings == []
@@ -107,11 +115,16 @@ class TestImportAnalyzerEdgeCases:
         analyzer = ImportAnalyzer()
         py_file = Path("/tmp/broken.py")
         context = AnalysisContext(
-            files={py_file: FileInfo(
-                path=py_file, content="def f(\n  pass", language='python',
-                has_syntax_errors=True, ast_tree=None
-            )},
-            graph=DependencyGraph()
+            files={
+                py_file: FileInfo(
+                    path=py_file,
+                    content="def f(\n  pass",
+                    language="python",
+                    has_syntax_errors=True,
+                    ast_tree=None,
+                )
+            },
+            graph=DependencyGraph(),
         )
         findings = analyzer.analyze(context)
         # Should return findings or empty list, not crash
@@ -126,9 +139,13 @@ class TestImportFixerEdgeCases:
         fixer = ImportFixer()
         content = "import os\nimport os\n\ndef f(): pass\n"
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="duplicate",
-            location=Location(line=2), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="duplicate",
+            location=Location(line=2),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], content)
@@ -142,9 +159,13 @@ class TestImportFixerEdgeCases:
         fixer = ImportFixer()
         content = "def f(): pass\nimport os\n"
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="duplicate",
-            location=Location(line=2), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="duplicate",
+            location=Location(line=2),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], content)
@@ -155,9 +176,13 @@ class TestImportFixerEdgeCases:
         fixer = ImportFixer()
         content = "import os\n"
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="duplicate",
-            location=None, fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="duplicate",
+            location=None,
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], content)
@@ -169,9 +194,13 @@ class TestImportFixerEdgeCases:
         fixer = ImportFixer()
         content = "import os\n"
         finding = Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="duplicate",
-            location=Location(line=999), fixable=True, auto_fix_safe=True
+            type="duplicate_import",
+            severity=Severity.WARNING,
+            file=Path("/tmp/test.py"),
+            message="duplicate",
+            location=Location(line=999),
+            fixable=True,
+            auto_fix_safe=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         result = fixer.apply_fix(finding, options[0], content)
@@ -181,9 +210,12 @@ class TestImportFixerEdgeCases:
         """Unused import finding always has 'delete' as first option."""
         fixer = ImportFixer()
         finding = Finding.create(
-            type="unused_import", severity=Severity.INFO,
-            file=Path("/tmp/test.py"), message="unused",
-            location=Location(line=1), fixable=True
+            type="unused_import",
+            severity=Severity.INFO,
+            file=Path("/tmp/test.py"),
+            message="unused",
+            location=Location(line=1),
+            fixable=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         assert len(options) >= 1
@@ -193,10 +225,14 @@ class TestImportFixerEdgeCases:
         """Unused import finding has 'keep' option for type hints."""
         fixer = ImportFixer()
         finding = Finding.create(
-            type="unused_import", severity=Severity.INFO,
-            file=Path("/tmp/test.py"), message="unused",
-            location=Location(line=1), fixable=True,
-            import_name="List", import_module="typing"
+            type="unused_import",
+            severity=Severity.INFO,
+            file=Path("/tmp/test.py"),
+            message="unused",
+            location=Location(line=1),
+            fixable=True,
+            import_name="List",
+            import_module="typing",
         )
         options = fixer.get_options(finding, AnalysisContext())
         actions = [o.action for o in options]
@@ -207,9 +243,12 @@ class TestImportFixerEdgeCases:
         fixer = ImportFixer()
         content = "from typing import List\n\ndef f(): pass\n"
         finding = Finding.create(
-            type="unused_import", severity=Severity.INFO,
-            file=Path("/tmp/test.py"), message="unused",
-            location=Location(line=1), fixable=True
+            type="unused_import",
+            severity=Severity.INFO,
+            file=Path("/tmp/test.py"),
+            message="unused",
+            location=Location(line=1),
+            fixable=True,
         )
         options = fixer.get_options(finding, AnalysisContext())
         keep_option = next(o for o in options if o.action == "keep")
@@ -247,17 +286,20 @@ class TestDependencyGraphEdgeCases:
 class TestFileInfoEdgeCases:
     """FileInfo must handle edge cases."""
 
-    @pytest.mark.parametrize("suffix,expected", [
-        (".py", "python"),
-        (".json", "json"),
-        (".yaml", "yaml"),
-        (".yml", "yaml"),
-        (".txt", "unknown"),
-        (".md", "unknown"),
-    ])
+    @pytest.mark.parametrize(
+        "suffix,expected",
+        [
+            (".py", "python"),
+            (".json", "json"),
+            (".yaml", "yaml"),
+            (".yml", "yaml"),
+            (".txt", "unknown"),
+            (".md", "unknown"),
+        ],
+    )
     def test_language_detection(self, suffix, expected):
         """Language detection maps extensions correctly."""
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, mode='w') as f:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, mode="w") as f:
             f.write("# test\n")
             f.flush()
             info = FileInfo.from_path(Path(f.name))
@@ -265,7 +307,7 @@ class TestFileInfoEdgeCases:
 
     def test_file_with_syntax_error_marks_flag(self):
         """Python file with syntax errors sets has_syntax_errors=True."""
-        with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode='w') as f:
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as f:
             f.write("def f(\n  pass\n")
             f.flush()
             info = FileInfo.from_path(Path(f.name))
@@ -293,11 +335,17 @@ class TestCoordinatorEdgeCases:
         """REPORT mode doesn't modify any files."""
         coordinator = AnalysisCoordinator()
         content = "import os\nimport os\n"
-        findings = [Finding.create(
-            type="duplicate_import", severity=Severity.WARNING,
-            file=Path("/tmp/test.py"), message="dup",
-            location=Location(line=2), fixable=True, auto_fix_safe=True
-        )]
+        findings = [
+            Finding.create(
+                type="duplicate_import",
+                severity=Severity.WARNING,
+                file=Path("/tmp/test.py"),
+                message="dup",
+                location=Location(line=2),
+                fixable=True,
+                auto_fix_safe=True,
+            )
+        ]
         context = AnalysisContext()
         results = coordinator.fix(findings, context, mode=FixMode.REPORT)
         # Nothing should be fixed

@@ -16,6 +16,7 @@ class StrategyRegistry:
     Uses lazy loading to ensure built-in strategies are available regardless
     of import order.
     """
+
     _strategies: Dict[str, Type[LanguageStrategy]] = {}
     _by_extension: Dict[str, Type[LanguageStrategy]] = {}
     _builtins_loaded: bool = False
@@ -23,23 +24,23 @@ class StrategyRegistry:
     @classmethod
     def _load_builtins(cls) -> None:
         """Load built-in strategies on first access (lazy initialization).
-        
+
         This method ensures strategies are registered regardless of import order
         or test isolation (clear() + re-register works correctly).
         """
         if cls._builtins_loaded:
             return
-        
+
         # Import the strategy classes (may already be in sys.modules)
         from imodent.strategies.python import PythonStrategy
         from imodent.strategies.json import JSONStrategy
         from imodent.strategies.jsonl import JSONLStrategy
         from imodent.strategies.yaml import YAMLStrategy
-        
+
         # Explicitly register each (idempotent - safe to call multiple times)
         for strategy_cls in [PythonStrategy, JSONStrategy, JSONLStrategy, YAMLStrategy]:
             cls.register(strategy_cls)
-        
+
         cls._builtins_loaded = True
 
     @classmethod
@@ -51,7 +52,7 @@ class StrategyRegistry:
             @StrategyRegistry.register
             class PythonStrategy(LanguageStrategy):
                 ...
-        
+
         Note: This method is idempotent - re-registering the same strategy
         is safe and just updates the entry.
         """
@@ -99,7 +100,7 @@ class StrategyRegistry:
     @classmethod
     def clear(cls):
         """Clear all registered strategies (useful for testing).
-        
+
         After clear(), the next registry access will re-register built-in
         strategies via _load_builtins().
         """
@@ -112,6 +113,7 @@ class ProcessorRegistry:
     """
     Registry for Processor implementations.
     """
+
     _processors: Dict[str, Type[Processor]] = {}
 
     @classmethod
