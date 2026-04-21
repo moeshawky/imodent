@@ -190,15 +190,13 @@ class AnalysisCoordinator:
 
             # Store result for this file
             if content != file_info.content:
-                from .findings import FixResult
+                from ..interfaces import FixResult
 
                 results[file_path] = FixResult(
                     success=True,
                     content=content,
-                    original_content=file_info.content,
                     errors=[],
                     warnings=[],
-                    changes=[],
                     original_valid=True,
                     fixed_valid=True,
                 )
@@ -263,9 +261,12 @@ class AnalysisCoordinator:
         return None
 
     def _get_user_choice(
-        self, finding: Finding, fixer, context: AnalysisContext
+        self,
+        finding: Finding,
+        fixer,
+        context: AnalysisContext,
     ) -> Optional[FixOption]:
-        """Get user's choice for interactive mode."""
+        """Get user's choice for interactive mode. Prompts user, doesn't assume."""
         options = fixer.get_options(finding, context)
 
         print(f"\n{finding.severity.value.upper()}: {finding.message}")
@@ -274,9 +275,26 @@ class AnalysisCoordinator:
         for i, opt in enumerate(options, 1):
             print(f"  {i}. {opt.label}: {opt.description}")
 
-        # In non-interactive mode, default to first option
-        # (Real implementation would prompt user)
-        return options[0]
+        # Prompt user — this is the actual interactive mode
+        while True:
+            try:
+                choice = input(
+                    f"\nChoose option [1-{len(options)}] or 's' to skip: "
+                ).strip()
+                if choice.lower() == "s":
+                    print("  → Skipped")
+                    return None
+                idx = int(choice) - 1
+                if 0 <= idx < len(options):
+                    print(f"  → Selected: {options[idx].label}")
+                    return options[idx]
+                else:
+                    print(f"  Invalid: choose 1-{len(options)} or 's'")
+            except ValueError:
+                print(f"  Invalid: choose 1-{len(options)} or 's'")
+            except EOFError:
+                print("\n  → EOF, skipping rest")
+                return None
 
 
 class AnalysisResult:

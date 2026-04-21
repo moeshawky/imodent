@@ -1,9 +1,8 @@
-"""
-CLI for imodent — code intelligence tool.
+"""CLI for imodent — code intelligence tool.
 
 Two modes:
-  FIX    — reformat and repair files in-place  (default, backward-compatible)
-  SCAN   — multi-file analysis: imports, lint, architecture  (--analyze)
+FIX — reformat and repair files in-place (default, backward-compatible)
+SCAN — multi-file analysis: imports, lint, architecture (--analyze)
 """
 
 import argparse
@@ -63,14 +62,14 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
     if check_only:
         print(f"{'✓' if result.success else '✗'} {file_path}")
         for err in result.errors:
-            print(f"  → {err}")
+            print(f" → {err}")
         return
 
     if dry_run:
         print(f"\n--- {file_path} ---")
         print(result.content, end="")
         for w in result.warnings:
-            print(f"  ⚠ {w}")
+            print(f" ⚠ {w}")
         return
 
     if backup and file_path.suffix.lower() in {
@@ -85,14 +84,14 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
     }:
         bak = file_path.with_suffix(file_path.suffix + ".bak")
         shutil.copy2(file_path, bak)
-        print(f"  ↳ backup → {bak}")
+        print(f" ↳ backup → {bak}")
 
     file_path.write_text(result.content, encoding="utf-8")
     print(f"✓ {file_path}")
     for err in result.errors:
-        print(f"  ✗ {err}")
+        print(f" ✗ {err}")
     for w in result.warnings:
-        print(f"  ⚠ {w}")
+        print(f" ⚠ {w}")
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +105,8 @@ def analyze_files(
     analyze_lint: bool = False,
     advisory: bool = False,
     fix: bool = False,
+    interactive: bool = False,
+    report: bool = False,
     backup: bool = False,
     dry_run: bool = False,
     check_only: bool = False,
@@ -123,7 +124,6 @@ def analyze_files(
     # ── Summary ──────────────────────────────────────────────────────────
     print(result.summary())
     print()
-
     if not result.findings:
         print("✓ Clean — no issues detected.")
         return
@@ -137,11 +137,11 @@ def analyze_files(
         print(f"\n{label} ({len(bucket)}):")
         for f in bucket[:10]:
             loc = f":{f.location.line}" if f.location else ""
-            print(f"  {f.file.name}{loc}: {f.message}")
+            print(f" {f.file.name}{loc}: {f.message}")
         if len(bucket) > 10:
-            print(f"  … +{len(bucket) - 10} more")
+            print(f" … +{len(bucket) - 10} more")
 
-    # ── Advisory ─────────────────────────────────────────────────────────
+    # ── Advisory ──────────────────────────────────────────────────────────
     if advisory:
         from .advisors.architecture import ArchitectureAdvisor
 
@@ -152,36 +152,51 @@ def analyze_files(
             print("━" * 60)
             for advice in advisor.advise(result.findings, result.context):
                 print(f"\n[{advice.category}] {advice.summary}")
-                print(f"  Why:     {advice.explanation}")
-                print(f"  Action:  {advice.recommendation}")
+                print(f"  Why: {advice.explanation}")
+                print(f"  Action: {advice.recommendation}")
                 if advice.example:
                     print(f"  Pattern:\n{advice.example}")
-                print(f"  Risk:    {advice.impact}")
+                print(f"  Risk: {advice.impact}")
 
-    # ── Fix ──────────────────────────────────────────────────────────────
-    if fix and not check_only:
+    # ── Determine fix mode ────────────────────────────────────────────────
+    if report:
+        fix_mode = FixMode.REPORT
         print("\n" + "━" * 60)
-        print("APPLYING FIXES")
+        print("REVIEW MODE — no files modified")
         print("━" * 60)
-        fix_results = coordinator.fix(
-            result.findings, result.context, mode=FixMode.SAFE_AUTO
-        )
+    elif interactive:
+        fix_mode = FixMode.INTERACTIVE
+        print("\n" + "━" * 60)
+        print("INTERACTIVE MODE — prompt before each fix")
+        print("━" * 60)
+    elif fix and not check_only:
+        fix_mode = FixMode.SAFE_AUTO
+        print("\n" + "━" * 60)
+        print("AUTO-FIX MODE — safe fixes only")
+        print("━" * 60)
+    else:
+        fix_mode = None
+
+    # ── Apply fixes ───────────────────────────────────────────────────────
+    if fix_mode is not None:
+        fix_results = coordinator.fix(result.findings, result.context, mode=fix_mode)
         for file_path, fix_result in fix_results.items():
             if not fix_result.success:
-                print(f"  ✗ {file_path}")
+                print(f" ✗ {file_path}")
                 for err in fix_result.errors:
-                    print(f"    → {err}")
+                    print(f"  → {err}")
                 continue
-            if backup:
+            if backup and fix_mode != FixMode.REPORT:
                 bak = file_path.with_suffix(file_path.suffix + ".bak")
                 shutil.copy2(file_path, bak)
-                print(f"  ↳ backup → {bak}")
-            if dry_run:
-                print(f"  ~ {file_path} (dry-run)")
+                print(f" ↳ backup → {bak}")
+            if dry_run or fix_mode == FixMode.REPORT:
+                tag = "dry-run" if dry_run else "review"
+                print(f" ~ {file_path} ({tag})")
                 print(fix_result.content[:500])
             else:
                 file_path.write_text(fix_result.content, encoding="utf-8")
-                print(f"  ✓ {file_path}")
+                print(f" ✓ {file_path}")
 
 
 def _expand_paths(paths: list[Path]) -> list[Path]:
@@ -206,40 +221,44 @@ imodent — code intelligence tool
 
 Two modes of operation:
 
-  FIX mode (default)   Reformat & repair files in-place.
-                       Detects language, fixes code, validates output.
+FIX mode (default)
+  Reformat & repair files in-place.
+  Detects language, fixes code, validates output.
 
-  SCAN mode (--analyze)  Multi-file project analysis.
-                         Import hygiene, lint violations, architectural drift.
+SCAN mode (--analyze)
+  Multi-file project analysis.
+  Import hygiene, lint violations, architectural drift.
 
 Operates on Python, JSON, JSONL, and YAML files.
-Creates .bak backups with --backup. Never modifies files without consent.\
+Creates .bak backups with --backup. Never modifies files without consent.
 """
 
 EPILOG = """\
 examples:
-  # ── FIX mode ──────────────────────────────────────────────────────────
 
-  imodent src/main.py                    reformat file, write in-place
-  imodent src/main.py -b                 reformat with .bak backup
-  imodent src/main.py -n                 preview diff, don't write
-  imodent src/main.py -c                 syntax check only
-  imodent ./src -r                       fix every file under src/
+  # ── FIX mode ──────────────────────────────────────────────────────────
+  imodent src/main.py                 reformat file, write in-place
+  imodent src/main.py -b              reformat with .bak backup
+  imodent src/main.py -n              preview diff, don't write
+  imodent src/main.py -c              syntax check only
+  imodent ./src -r                    fix every file under src/
+  imodent broken.py --force           attempt fix on structurally broken code
 
   # ── SCAN mode ─────────────────────────────────────────────────────────
+  imodent ./src --analyze --imports           find unused & duplicate imports
+  imodent ./src --analyze --advisory          flag architectural issues
+  imodent ./src --analyze --imports --fix     auto-fix safe import issues
+  imodent ./src --analyze --imports --interactive  prompt before each fix
+  imodent ./src --analyze --imports --report  review report, no changes
+  imodent ./src --analyze --imports --advisory --fix  full audit + fix
 
-  imodent ./src --analyze --imports      find unused & duplicate imports
-  imodent ./src --analyze --advisory     flag architectural issues
-  imodent ./src --analyze --imports --fix   auto-fix safe import issues
-  imodent ./src --analyze --imports --advisory --fix   full audit + fix
-
-import analysis gives you options per finding:
-  • delete    — remove the unused import
-  • keep      — preserve it (type hints, re-exports, __all__)
+  import analysis gives you options per finding:
+  • delete — remove the unused import
+  • keep — preserve it (type hints, re-exports, __all__)
   • investigate — search codebase before deciding
   • false-positive — mark as used if analysis missed it
 
-Only asks for input when the correct action is genuinely ambiguous.\
+  Only asks for input when the correct action is genuinely ambiguous.
 """
 
 
@@ -329,7 +348,12 @@ def main():
     scan_group.add_argument(
         "--interactive",
         action="store_true",
-        help="prompt before each ambiguous fix",
+        help="prompt before each fix (not for batch mode)",
+    )
+    scan_group.add_argument(
+        "--report",
+        action="store_true",
+        help="generate review report without modifying files",
     )
     scan_group.add_argument(
         "-v",
@@ -348,6 +372,8 @@ def main():
             analyze_lint=args.lint,
             advisory=args.advisory,
             fix=args.fix,
+            interactive=args.interactive,
+            report=args.report,
             backup=args.backup,
             dry_run=args.dry_run,
             check_only=args.check,
