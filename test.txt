@@ -1,0 +1,241 @@
+ python3 imodent.py -n /srv/hive_mind_py_in_docker/hive_mind/tools/reasoning.py
+
+--- /srv/hive_mind_py_in_docker/hive_mind/tools/reasoning.py ---
+"""Reasoning tools - productive reasoning, scratchpad, and code lookup.
+
+Tools: productive_reason, reason_meta, scratchpad, code_lookup
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Annotated
+
+from hive_mind.sanitize import sanitize_thought  # Crowd Flow input sanitization
+from typing import TYPE_CHECKING, Annotated
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from mcp.server.fastmcp import Context
+
+    log = logging.getLogger("hive_mind.tools.reasoning")
+
+
+    def register_tools(mcp: "FastMCP") -> None:
+        """Register reasoning tools with MCP server."""
+
+        @mcp.tool()
+        async def productive_reason(
+                            phase: Annotated[str, "Reasoning phase: see, explore, converge, or reflect"],
+        thought: Annotated[str, "Your current reasoning step — free text"] = "",
+        nextThoughtNeeded: Annotated[bool, "True if more thinking needed, False when done"] = True,
+        thoughtNumber: Annotated[int, "Current thought number (auto-assigned if 0)"] = 0,
+        isRevision: Annotated[bool, "Whether this revises previous thinking"] = False,
+        revisesThought: Annotated[int, "Which thought number is being reconsidered"] = 0,
+        branchFromThought: Annotated[int, "Branching point thought number"] = 0,
+        branchId: Annotated[str, "Branch identifier"] = "",
+        challengeOperator: Annotated[str, "Flag operator blind spot: 'assumes X but evidence shows Y'"] = "",
+        confidence: Annotated[int, "Self-assessed confidence 0-100"] = 0,
+        content: Annotated[str, "V3 compat: JSON-encoded phase data"] = "",
+        session_id: Annotated[str, "Session ID for chain tracking"] = "",
+        ctx: Context | None = None,
+        ) -> str:
+            """Productive Reasoning V4 — unlimited thoughts within 4-phase gates.
+            4 phases: SEE → EXPLORE → CONVERGE → REFLECT.
+            Each phase has a gate that fires on phase TRANSITIONS.
+
+            Phase Gates (fire at transitions):
+                - SEE→EXPLORE: ≥2 axes, blind spot acknowledged, fixedness probe
+                - EXPLORE→CONVERGE: ≥1 surprising insight or operator challenge
+                - CONVERGE entry: GROUNDING gate — chain must have contacted reality
+                - CONVERGE→REFLECT: approach stated + falsification condition
+                - REFLECT exit: outcome + lesson (+ diagnosis if ineffective)
+                """
+                from hive_mind import reasoning as r
+                from hive_mind.tools.core import _resolve_sid
+
+                real_sid = await _resolve_sid(ctx)
+                if session_id and real_sid != "unknown" and session_id != real_sid:
+                    await r.link_chain_to_session(session_id, real_sid)
+
+                    current_gate = await r.get_gate_status(session_id)
+                    if current_gate < r.GateState.STARTED:
+                        await r._set_gate(session_id, r.GateState.STARTED)
+                        # Crowd Flow sanitization: coerce bad input, preserve training data
+                        phase = (phase or "").lower().strip()
+                        if phase not in ("see", "explore", "converge", "reflect"):
+                            phase = "see"  # Default for invalid phases
+                            sanitized = sanitize_thought(thought, session_id or "unknown")
+                            if sanitized.get("text"):
+                                if thought:
+                                    result = await r.process_thought(
+                                 session_id=session_id,
+                                 phase=phase,
+                                 thought=sanitized["text"],
+                                    next_needed=nextThoughtNeeded,
+                                    thought_number=thoughtNumber if thoughtNumber > 0 else None,
+                                    is_revision=isRevision,
+                                    revises_thought=revisesThought if revisesThought > 0 else None,
+                                    branch_from=branchFromThought if branchFromThought > 0 else None,
+                                    branch_id=branchId or None,
+                                    challenge_operator=challengeOperator or None,
+                                    confidence=confidence if confidence > 0 else None,
+                                    )
+
+                                    if "error" in result:
+                                        return f"ERROR: {result['error']}"
+
+                                        phase_emoji = {"see": "👁", "explore": "🔍", "converge": "🎯", "reflect": "🪞"}.get(
+                                                                                result.get("phase", ""), "💭"
+                                        )
+                                        parts = [f"{phase_emoji} [{result.get('phase', '?').upper()} #{result.get('thoughtNumber', '?')}]"]
+
+                                        if result.get("gateStatus", {}).get("fired"):
+                                            gs = result["gateStatus"]
+                                            parts.append(f"Gate: {'PASS' if gs['passed'] else 'FAIL'} — {gs['message']}")
+
+                                            if result.get("challenges"):
+                                                parts.append(f"⚡ Challenges: {'; '.join(result['challenges'])}")
+
+                                                if result.get("warnings"):
+                                                    parts.append(" | ".join(result["warnings"]))
+
+                                                    if not result.get("nextThoughtNeeded"):
+                                                        parts.append(
+             f"Chain complete: outcome={result.get('outcome', '?')}, reward={result.get('chainReward', '?')}"
+                                                        )
+
+                                                        return "\n".join(parts)
+
+                                                        return "Use thought parameter to send reasoning steps."
+
+                                                        @mcp.tool()
+                                                        async def reason_meta(
+                      session_id: Annotated[str, "Session ID for chain tracking"] = "",
+                                                        ctx: Context | None = None,
+                                                        ) -> str:
+                                                            """Call BEFORE acting. Returns an action: 'Call productive_reason at SEE/CONVERGE phase' or 'Proceed directly'. Follow the action field."""
+                                                            from hive_mind import reasoning as r
+                                                            from hive_mind.tools.core import _resolve_sid
+
+                                                            real_sid = await _resolve_sid(ctx, session_id)
+                                                            gate = await r.get_gate_status(real_sid)
+                                                            action = r.should_reason(gate)
+                                                            return f"Action: {action}\nGate status: {gate.name if hasattr(gate, 'name') else gate}\nSession: {real_sid[:12]}"
+
+                                                            @mcp.tool()
+                                                            async def scratchpad(
+                     action: Annotated[str, "Action: 'write' or 'read'"],
+                                                            key: Annotated[str, "Scratchpad key (e.g., 'plan', 'findings', 'moving_parts')"] = "",
+                                                            value: Annotated[str, "Value to write (only for action='write')"] = "",
+                                                            session_id: Annotated[str, "Session ID for scratchpad isolation"] = "",
+                                                            ) -> str:
+                                                                """Agent scratchpad — working memory for complex multi-part tasks. Survives session crashes."""
+                                                                from hive_mind import reasoning as r
+
+                                                                if action == "write":
+                                                                    if not key:
+                                                                        return "ERROR: key required for write."
+                                                                        return r.scratchpad_write(session_id, key, value)
+                                                                        elif action == "read":
+                                                                            return r.scratchpad_read(session_id, key)
+                                                                            else:
+                                                                                return f"ERROR: unknown action '{action}'. Use 'read' or 'write'."
+
+                                                                                @mcp.tool()
+                                                                                async def code_lookup(
+                      query: Annotated[str, "Natural language query for programming idioms or stdlib patterns"],
+                                                                                language: Annotated[str, "Filter by programming language (e.g. 'rust', 'python')"] = "",
+                                                                                n_results: Annotated[int, "Number of results to return (1-20)"] = 5,
+                                                                                ) -> dict:
+                                                                                    """Search programming reference books for implementation patterns. CRITICAL: This tool ONLY accesses static academic reference books, NOT your current project."""
+                                                                                    from hive_mind.qmd import qmd_search
+
+                                                                                    results = await qmd_search(query, n_results=n_results, collection="code_aid")
+                                                                                    hits = []
+                                                                                    for mem in results:
+                                                                                        hits.append({
+            "content": mem.content[:1500],
+                                                                                        "source": mem.metadata.get("source", ""),
+                                                                                        "language": mem.metadata.get("primary_language", ""),
+                                                                                        "section": mem.metadata.get("header_path", ""),
+                                                                                        "has_code": mem.metadata.get("has_code", False),
+                                                                                        "score": mem.confidence,
+                                                                                        })
+
+                                                                                        if hits and len(hits) > 1:
+                                                                                            from hive_mind.helpers import rerank_call
+
+                                                                                            docs_for_rerank = [h["content"][:500] for h in hits]
+                                                                                            ranked = await rerank_call(query, docs_for_rerank, top_k=len(hits))
+                                                                                            if ranked and ranked[0].get("score", 0) > 0:
+                                                                                                reordered = []
+                                                                                                for r_ in ranked:
+                                                                                                    idx = r_.get("index", 0)
+                                                                                                    if idx < len(hits):
+                                                                                                        hits[idx]["score"] = round(r_.get("score", 0), 3)
+                                                                                                        reordered.append(hits[idx])
+                                                                                                        hits = reordered
+
+                                                                                                        return {"results": hits, "query": query, "language_filter": language}
+
+                                                                                                        async def api_docs_lookup(
+                          query: Annotated[str, "Natural language query for API documentation (e.g., 'how to use productive_reason', 'broadcast message to all agents')"],
+                                                                                                        n_results: Annotated[int, "Number of results to return (1-20)"] = 5,
+                                                                                                        ) -> dict:
+                                                                                                            """Search hive-mind API documentation.
+
+                                                                                                            Returns documentation for MCP tools, zvec operations, and project APIs.
+                                                                                                            Use this instead of code_lookup for project-specific API questions.
+
+                                                                                                            Examples:
+                                                                                                                - GOOD: 'how to use productive_reason with branching'
+                                                                                                                - GOOD: 'broadcast a message to all agents'
+                                                                                                                - GOOD: 'store memory with pheromone concentration'
+                                                                                                                - BAD: 'how to implement thread-safe singleton' (use code_lookup)
+                                                                                                                """
+                                                                                                                from hive_mind.memory_search import search_semantic
+
+# Search in api_docs collection
+                                                                                                                results = await search_semantic(
+                                query,
+                                n_results=n_results,
+                                collection="api_docs"
+                                )
+                                                                                                                hits = []
+                                                                                                                for mem in results:
+                                                                                                                    hits.append({
+            "name": mem.metadata.get("tool_name", mem.category),
+                                                                                                                    "content": mem.content[:1500],
+                                                                                                                    "source": mem.metadata.get("source", "api_docs"),
+                                                                                                                    "score": mem.confidence,
+                                                                                                                    })
+
+                                                                                                                    return {
+        "query": query,
+        "results": hits,
+        "count": len(hits),
+                                                                                                                    }
+
+Warnings:
+  Black failed: unindent does not match any outer indentation level (<tokenize>, line 108), falling back to internal logic
+  Could not parse AST, using heuristic indentation
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+issues missed:
+
+    Removed duplicate import - from typing import TYPE_CHECKING, Annotated was imported twice
+    Added missing import logging - the log variable used it but it wasn't imported
+    Fixed main indentation bug - the Crowd Flow sanitization block was at module-level indentation (0 spaces) instead of being inside productive_reason function (8 spaces)
+    Fixed nested condition logic - combined if sanitized.get("text"): and if thought: into a single condition since the double-nesting was incorrect
+    Fixed thought= argument - was misaligned with other arguments in r.process_thought() call

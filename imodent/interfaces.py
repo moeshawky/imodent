@@ -110,3 +110,8 @@ class Processor(ABC):
             FixResult with processing results.
         """
         pass
+
+# Re-export analysis types for convenience
+from .analysis.findings import Finding, Severity, Location, FixOption, Advice, Change
+from .analysis.context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph
+from .analysis.coordinator import AnalysisCoordinator, AnalysisResult, FixMode

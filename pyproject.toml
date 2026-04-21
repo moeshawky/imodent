@@ -29,6 +29,7 @@ dependencies = [
     "black>=23.0",
     "ruamel.yaml>=0.18",
     "json-repair>=0.20",
+    "ruff>=0.1.0",
 ]
 
 [project.scripts]
