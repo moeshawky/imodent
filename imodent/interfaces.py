@@ -1,5 +1,5 @@
 """
-Abstract Base Classes for the Indentation Fixer.
+Abstract Base Classes for imodent.
 
 These define the contracts that all language strategies and processors must implement.
 """
@@ -23,7 +23,7 @@ class FixResult:
 
 class LanguageStrategy(ABC):
     """
-    Abstract base class for language-specific indentation fixing.
+    Abstract base class for language-specific code fixing.
 
     Each language (Python, JSON, JSONL, YAML, etc.) implements this interface
     to provide its own detection, fixing, and validation logic.
@@ -57,11 +57,11 @@ class LanguageStrategy(ABC):
     @abstractmethod
     def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """
-        Fix indentation issues in the content.
+        Fix code issues in the content (indentation, formatting, structure).
 
         Args:
             content: The source code content to fix.
-            indent_size: Number of spaces per indentation level.
+            indent_size: Number of spaces per indentation level (formatting parameter).
 
         Returns:
             FixResult with success status, fixed content, and any errors/warnings.

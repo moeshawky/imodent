@@ -11,11 +11,11 @@ from .registry import StrategyRegistry
 
 class FixPipeline:
     """
-    Orchestrates the indentation fixing process.
+    Orchestrates the code fixing process.
 
     Steps:
     1. Detect the language using registered strategies
-    2. Fix the indentation using the detected strategy
+    2. Fix code using the detected strategy
     3. Validate the result
     4. Return the FixResult
     """
@@ -25,7 +25,7 @@ class FixPipeline:
         Initialize the pipeline.
 
         Args:
-            indent_size: Default indentation size for fixing.
+            indent_size: Default formatting size for fixing.
         """
         self.indent_size = indent_size
         self._strategy: Optional[LanguageStrategy] = None
@@ -68,7 +68,7 @@ class FixPipeline:
         strategy: Optional[LanguageStrategy] = None,
         force: bool = False,
     ) -> FixResult:
-        """Fix the indentation of the content.
+        """Fix the code content.
 
         Args:
             content: The source code content to fix.

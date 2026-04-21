@@ -207,7 +207,7 @@ imodent — code intelligence tool
 Two modes of operation:
 
   FIX mode (default)   Reformat & repair files in-place.
-                       Detects language, fixes indentation, validates output.
+                       Detects language, fixes code, validates output.
 
   SCAN mode (--analyze)  Multi-file project analysis.
                          Import hygiene, lint violations, architectural drift.
