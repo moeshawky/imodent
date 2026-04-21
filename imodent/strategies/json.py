@@ -40,7 +40,7 @@ class JSONStrategy(LanguageStrategy):
         except json.JSONDecodeError:
             return False
 
-    def fix(self, content: str, indent_size: int = 4) -> FixResult:
+    def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """Fix JSON formatting using json-repair first, then our logic as fallback."""
         import json
 

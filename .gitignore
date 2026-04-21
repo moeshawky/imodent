@@ -8,6 +8,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+*.egg
 
 # Virtual environments
 venv/
@@ -22,8 +23,14 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Backups
+# Backups (imodent creates .bak files)
 *.bak
 
-# Eggs
-*.egg
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Temp / scratch files
+test.txt
+*.tmp

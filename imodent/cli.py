@@ -31,12 +31,13 @@ def fix_file(
     backup: bool = True,
     dry_run: bool = False,
     check_only: bool = False,
+    force: bool = False,
 ):
     """Reformat one file or directory tree."""
     pipeline = FixPipeline(indent_size=indent_size)
     targets = _collect_targets(file_path)
     for target in targets:
-        _process_file(pipeline, target, backup, dry_run, check_only)
+        _process_file(pipeline, target, backup, dry_run, check_only, force)
 
 
 def _collect_targets(file_path: Path) -> list[Path]:
@@ -49,7 +50,7 @@ def _collect_targets(file_path: Path) -> list[Path]:
     )
 
 
-def _process_file(pipeline, file_path, backup, dry_run, check_only):
+def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False):
     """Fix one file. Write, preview, or validate depending on flags."""
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -57,7 +58,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only):
         print(f"✗ {file_path}: {e}")
         return
 
-    result = pipeline.fix(content)
+    result = pipeline.fix(content, force=force)
 
     if check_only:
         print(f"{'✓' if result.success else '✗'} {file_path}")
@@ -292,6 +293,11 @@ def main():
         action="store_true",
         help="walk subdirectories",
     )
+    fix_group.add_argument(
+        "--force",
+        action="store_true",
+        help="attempt fix on structurally broken code (skips pre-flight check)",
+    )
 
     # ── SCAN mode flags ──────────────────────────────────────────────────
     scan_group = parser.add_argument_group("scan mode", "multi-file project analysis")
@@ -355,6 +361,7 @@ def main():
                 backup=args.backup,
                 dry_run=args.dry_run,
                 check_only=args.check,
+                force=args.force,
             )
 
 

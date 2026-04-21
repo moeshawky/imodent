@@ -63,14 +63,17 @@ class FixPipeline:
         return None
 
     def fix(
-        self, content: str, strategy: Optional[LanguageStrategy] = None
+        self,
+        content: str,
+        strategy: Optional[LanguageStrategy] = None,
+        force: bool = False,
     ) -> FixResult:
-        """
-        Fix the indentation of the content.
+        """Fix the indentation of the content.
 
         Args:
             content: The source code content to fix.
             strategy: Optional strategy to use. If None, auto-detect.
+            force: If True, attempt heuristic fix even on structurally broken code.
 
         Returns:
             FixResult with the fixed content and validation status.
@@ -89,7 +92,7 @@ class FixPipeline:
             )
 
         # Fix the content
-        result = strategy.fix(content, self.indent_size)
+        result = strategy.fix(content, self.indent_size, force=force)
 
         return result
 

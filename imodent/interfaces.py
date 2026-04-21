@@ -55,7 +55,7 @@ class LanguageStrategy(ABC):
         pass
 
     @abstractmethod
-    def fix(self, content: str, indent_size: int = 4) -> FixResult:
+    def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """
         Fix indentation issues in the content.
 

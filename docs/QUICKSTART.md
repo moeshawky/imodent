@@ -1,6 +1,6 @@
 # Quick Start
 
-**Last Verified:** 2026-04-20
+**Last Verified:** 2026-04-21
 
 ---
 
@@ -9,6 +9,8 @@
 ```bash
 cd /srv/imodent
 pip install -e .
+# or system-wide:
+pipx install .
 ```
 
 ## Your First Fix
@@ -18,11 +20,12 @@ pip install -e .
 ```bash
 cat > /tmp/messy.py << 'EOF'
 def hello():
-if True:
-print("world")
+  if True:
+    print("world")
+
 class Foo:
-def bar(self):
-pass
+  def bar(self):
+    pass
 EOF
 ```
 
@@ -36,16 +39,30 @@ imodent /tmp/messy.py --dry-run
 
 ```bash
 imodent /tmp/messy.py --backup
-# Output:
-# Backup created: /tmp/messy.py.bak
-# Fixed: /tmp/messy.py
+# ↳ backup → /tmp/messy.py.bak
+# ✓ /tmp/messy.py
 ```
 
 ### Step 4: Verify
 
 ```bash
 imodent /tmp/messy.py --check
-# Output: ✓ /tmp/messy.py
+# ✓ /tmp/messy.py
+```
+
+---
+
+## Scan Your Project
+
+```bash
+# Find unused & duplicate imports
+imodent ./src --analyze --imports
+
+# Flag architectural issues
+imodent ./src --analyze --advisory
+
+# Auto-fix safe findings
+imodent ./src --analyze --imports --fix
 ```
 
 ---
@@ -62,6 +79,9 @@ imodent myfile.py --indent 2
 # Check syntax only
 imodent myfile.py --check
 
+# Fix structurally broken code
+imodent broken.py --force
+
 # Fix JSON
 imodent config.json --backup
 
@@ -74,18 +94,25 @@ imodent config.json --dry-run
 ## Python API
 
 ```python
-from imodent.pipeline import FixPipeline
-
-pipeline = FixPipeline(indent_size=4)
+from imodent import FixPipeline, AnalysisCoordinator
 
 # Fix code (auto-detects language)
+pipeline = FixPipeline(indent_size=4)
 result = pipeline.fix(messy_code)
-
 if result.success:
     print(result.content)
 else:
     for err in result.errors:
         print(f"Error: {err}")
+
+# Force fix on structurally broken code
+result = pipeline.fix(broken_code, force=True)
+
+# Analyze project
+coordinator = AnalysisCoordinator()
+result = coordinator.analyze([Path("src/")])
+for finding in result.findings:
+    print(f"{finding.severity.value}: {finding.message}")
 ```
 
 ---
@@ -96,23 +123,29 @@ else:
 from imodent.interfaces import LanguageStrategy, FixResult
 from imodent.registry import StrategyRegistry
 
+
 @StrategyRegistry.register
-class RustStrategy(LanguageStrategy):
+class TOMLStrategy(LanguageStrategy):
     @property
     def name(self) -> str:
-        return "rust"
+        return "toml"
 
     @property
     def extensions(self) -> list[str]:
-        return ['.rs']
+        return [".toml"]
 
     def detect(self, content: str) -> bool:
-        return 'fn ' in content
+        return "[[" in content or "=" in content
 
-    def fix(self, content: str, indent_size: int = 4) -> FixResult:
-        # Your fixing logic
-        return FixResult(success=True, content=content, errors=[], warnings=[],
-                         original_valid=True, fixed_valid=True)
+    def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        return FixResult(
+            success=True,
+            content=content,
+            errors=[],
+            warnings=[],
+            original_valid=True,
+            fixed_valid=True,
+        )
 
     def validate(self, content: str) -> tuple[bool, str | None]:
         return True, None
@@ -124,11 +157,17 @@ No core changes needed — the pipeline auto-discovers registered strategies.
 
 ## Troubleshooting
 
-### "Could not parse AST" warning
+### "File has structural syntax error — cannot auto-fix"
 
-The input has syntax errors beyond indentation. The tool falls back to heuristic indentation.
+The input has syntax errors beyond indentation (e.g., missing colons, invalid expressions). imodent refuses to run heuristic indentation on structurally broken code.
 
-**Fix:** Repair syntax manually, then re-run.
+**Fix:** Repair the syntax error manually, then rerun. Or use `--force` to attempt heuristic fix anyway.
+
+### "Could not parse AST" warning (with --force)
+
+The heuristic indentation engine ran on a file where AST parsing failed. Output may not be correct.
+
+**Fix:** Repair syntax manually, then re-run without `--force`.
 
 ### Wrong format detected
 
@@ -138,6 +177,7 @@ The pipeline checks JSON → JSONL → Python (most specific first).
 
 ```python
 from imodent.strategies.json import JSONStrategy
+
 strategy = JSONStrategy()
 result = strategy.fix(content, indent_size=4)
 ```
@@ -147,8 +187,8 @@ result = strategy.fix(content, indent_size=4)
 ## Verification
 
 ```bash
-pytest tests/test_modular.py -v
-# Expected: 18 passed
+pytest tests/ -v
+# Expected: 161+ passed
 ```
 
-**Last Verified:** 2026-04-20
+**Last Verified:** 2026-04-21

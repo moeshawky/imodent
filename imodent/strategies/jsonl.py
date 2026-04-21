@@ -39,7 +39,7 @@ class JSONLStrategy(LanguageStrategy):
         # All lines must be valid JSON
         return all(self._is_valid_json_line(line) for line in lines)
 
-    def fix(self, content: str, indent_size: int = 4) -> FixResult:
+    def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """Fix JSONL formatting (each line is compact JSON)."""
         errors = []
         warnings = []

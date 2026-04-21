@@ -138,16 +138,44 @@ class PythonStrategy(LanguageStrategy):
                 )
             )
 
-    def fix(self, content: str, indent_size: int = 4) -> FixResult:
-        """Fix Python indentation using black first, then our AST logic as fallback."""
+    def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        """Fix Python indentation using black first, then our AST logic as fallback.
+
+        Args:
+            content: Python source code to fix.
+            indent_size: Number of spaces per indent level.
+            force: If True, attempt heuristic fix even on structurally broken code.
+                   Default False — aborts early with diagnostic for non-indentation
+                   syntax errors, saving 3 wasted fallback steps.
+        """
         errors = []
         warnings = []
 
         # Check original validity
         original_valid, original_error = self.validate(content)
         if not original_valid:
-            if "indent" not in original_error.lower():
-                warnings.append(f"Original code has syntax error: {original_error}")
+            is_indent_error = "indent" in original_error.lower()
+            if not is_indent_error:
+                # Structural syntax error (not indentation) — heuristic cannot fix this.
+                # Without --force, abort immediately instead of wasting 3 fallback steps.
+                if not force:
+                    return FixResult(
+                        success=False,
+                        content=content,
+                        errors=[
+                            f"File has structural syntax error — cannot auto-fix.",
+                            f"  {original_error}",
+                            f"  Fix the syntax error first, then rerun imodent.",
+                            f"  Use --force to attempt heuristic fix anyway.",
+                        ],
+                        warnings=warnings,
+                        original_valid=original_valid,
+                        fixed_valid=False,
+                    )
+                else:
+                    warnings.append(
+                        f"Original code has syntax error (--force): {original_error}"
+                    )
 
         # STAGE 1: Try black first (it handles complex formatting)
         try:

@@ -170,3 +170,38 @@ class TestPipelineErrorHandling:
         result = pipeline.fix("")
         # Should not crash — may return success or failure
         assert result is not None
+
+    def test_structural_syntax_error_aborts_without_force(self):
+        """Non-indentation syntax errors abort immediately without --force."""
+        from imodent import FixPipeline
+
+        pipeline = FixPipeline()
+        broken = "def f():\n  pass\n  x =\n"  # SyntaxError at line 3
+        result = pipeline.fix(broken, force=False)
+        assert not result.success
+        assert "structural syntax error" in result.errors[0].lower()
+        assert "--force" in result.errors[-1]
+        # Should NOT have attempted heuristic (no "heuristic" in warnings)
+        assert not any("heuristic" in w.lower() for w in result.warnings)
+
+    def test_structural_syntax_error_tries_heuristic_with_force(self):
+        """With --force, non-indentation syntax errors attempt heuristic."""
+        from imodent import FixPipeline
+
+        pipeline = FixPipeline()
+        broken = "def f():\n  pass\n  x =\n"
+        result = pipeline.fix(broken, force=True)
+        assert not result.success
+        # Should have attempted heuristic
+        assert any("heuristic" in w.lower() for w in result.warnings)
+
+    def test_indentation_error_not_blocked(self):
+        """IndentationError is NOT blocked — those can be fixed."""
+        from imodent import FixPipeline
+
+        pipeline = FixPipeline()
+        # This has an indentation error that Black can fix
+        indented = "def f():\n    if True:\n        pass\n"
+        result = pipeline.fix(indented, force=False)
+        # Should NOT be blocked by the pre-flight guard
+        assert "structural syntax error" not in " ".join(result.errors).lower()
