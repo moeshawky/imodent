@@ -1,7 +1,7 @@
-"""
-JSONL (JSON Lines) Language Strategy.
+"""JSONL (JSON Lines) Language Strategy.
 
 Handles JSONL formatting and validation.
+Each line must be valid JSON — broken lines are flagged, not silently rejected.
 """
 
 import json
@@ -25,19 +25,28 @@ class JSONLStrategy(LanguageStrategy):
         return [".jsonl", ".ndjson"]
 
     def detect(self, content: str) -> bool:
-        """Detect if content is JSONL."""
+        """Detect if content is JSONL.
+
+        Detects the LANGUAGE, not validity. Broken JSONL is still JSONL —
+        it just needs fixing. Returns True if content has multiple lines
+        where most look like JSON objects/arrays.
+        """
         stripped = content.strip()
         if not stripped:
             return False
 
-        # Multiple lines, each valid JSON
         lines = [line.strip() for line in content.splitlines() if line.strip()]
-
-        if len(lines) < 2:
+        if len(lines) < 1:
             return False
 
-        # All lines must be valid JSON
-        return all(self._is_valid_json_line(line) for line in lines)
+        # At least one line must start with { or [ — that's what makes it JSONL
+        jsonish = sum(
+            1 for line in lines if line.startswith("{") or line.startswith("[")
+        )
+        # Majority of lines should look like JSON
+        if len(lines) == 1:
+            return jsonish == 1
+        return jsonish >= len(lines) * 0.5
 
     def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """Fix JSONL formatting (each line is compact JSON)."""
@@ -45,19 +54,18 @@ class JSONLStrategy(LanguageStrategy):
         warnings = []
         fixed_lines = []
 
-        for line in content.splitlines():
+        for i, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             if not stripped:
                 fixed_lines.append("")
                 continue
-
             try:
                 obj = json.loads(stripped)
-                # JSONL lines are typically compact
+                # JSONL lines are compact
                 fixed_lines.append(json.dumps(obj, ensure_ascii=False))
-            except json.JSONDecodeError:
-                errors.append(f"Invalid JSON on line: {stripped[:50]}...")
-                fixed_lines.append(stripped)
+            except json.JSONDecodeError as e:
+                errors.append(f"Line {i}: {e}")
+                fixed_lines.append(stripped)  # keep original on error
 
         return FixResult(
             success=len(errors) == 0,
@@ -71,19 +79,9 @@ class JSONLStrategy(LanguageStrategy):
     def validate(self, content: str) -> Tuple[bool, Optional[str]]:
         """Validate JSONL syntax (each line must be valid JSON)."""
         lines = [line.strip() for line in content.splitlines() if line.strip()]
-
         for i, line in enumerate(lines, 1):
             try:
                 json.loads(line)
             except json.JSONDecodeError as e:
                 return False, f"Line {i}: {e}"
-
         return True, None
-
-    def _is_valid_json_line(self, line: str) -> bool:
-        """Check if a single line is valid JSON."""
-        try:
-            json.loads(line)
-            return True
-        except json.JSONDecodeError:
-            return False

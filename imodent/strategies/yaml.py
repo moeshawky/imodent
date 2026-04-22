@@ -1,7 +1,7 @@
-"""
-YAML Language Strategy.
+"""YAML Language Strategy.
 
 Handles YAML formatting and validation using PyYAML.
+Broken YAML is flagged with diagnostics, not silently rejected.
 """
 
 import re
@@ -24,37 +24,40 @@ class YAMLStrategy(LanguageStrategy):
         return [".yaml", ".yml"]
 
     def detect(self, content: str) -> bool:
-        """Detect if content is YAML."""
+        """Detect if content is YAML.
+
+        Detects the LANGUAGE, not validity. Broken YAML is still YAML —
+        it just needs fixing. Returns True if content has YAML patterns
+        (key: value, --- document start), even if it has syntax errors.
+        """
         stripped = content.strip()
         if not stripped:
             return False
 
-        # YAML indicators: key: value patterns, --- document start
-        if stripped.startswith("---"):
-            return True
-
-        # Must have key: value patterns but NOT be JSON (no leading { or [)
+        # Not JSON — JSON has its own strategy
         if re.search(r"^\s*[\{\[]", stripped):
             return False
 
-        # Look for YAML key patterns
-        if re.search(r"^[a-zA-Z_][a-zA-Z0-9_.-]*\s*:", stripped, re.MULTILINE):
-            try:
-                import yaml
+        # YAML indicators: document start
+        if stripped.startswith("---"):
+            return True
 
-                yaml.safe_load(content)
-                return True
-            except Exception:
-                return False
+        # Look for YAML key patterns (key: value)
+        if re.search(r"^[a-zA-Z_][a-zA-Z0-9_.-]*\s*:", stripped, re.MULTILINE):
+            return True
 
         return False
 
     def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
-        """Fix YAML formatting using ruamel.yaml first, then our logic as fallback."""
+        """Fix YAML formatting using ruamel.yaml first, then PyYAML as fallback."""
         import yaml
 
         errors = []
         warnings = []
+        original_valid, original_error = self.validate(content)
+
+        if not original_valid:
+            warnings.append(f"Original YAML has error: {original_error}")
 
         # STAGE 1: Try ruamel.yaml first (preserves comments, better formatting)
         try:
@@ -64,16 +67,14 @@ class YAMLStrategy(LanguageStrategy):
             yaml_obj.indent(mapping=indent_size, sequence=indent_size, offset=0)
             yaml_obj.preserve_quotes = True
 
-            # Load and dump
             data = yaml_obj.load(content)
-
             if data is None:
                 return FixResult(
                     success=True,
                     content=content,
                     errors=errors,
                     warnings=warnings,
-                    original_valid=True,
+                    original_valid=original_valid,
                     fixed_valid=True,
                 )
 
@@ -91,30 +92,28 @@ class YAMLStrategy(LanguageStrategy):
                     content=fixed,
                     errors=errors,
                     warnings=warnings,
-                    original_valid=True,
+                    original_valid=original_valid,
                     fixed_valid=True,
                 )
             except yaml.YAMLError as e:
                 warnings.append(
-                    f"ruamel.yaml output invalid: {e}, falling back to internal logic"
+                    f"ruamel.yaml output invalid: {e}, falling back to PyYAML"
                 )
-
         except ImportError:
             warnings.append("ruamel.yaml not installed, using PyYAML")
         except Exception as e:
-            warnings.append(f"ruamel.yaml failed: {e}, falling back to internal logic")
+            warnings.append(f"ruamel.yaml failed: {e}, falling back to PyYAML")
 
         # STAGE 2: Fallback to PyYAML
         try:
             data = yaml.safe_load(content)
-
             if data is None:
                 return FixResult(
                     success=True,
                     content=content,
                     errors=errors,
                     warnings=warnings,
-                    original_valid=True,
+                    original_valid=original_valid,
                     fixed_valid=True,
                 )
 
@@ -135,7 +134,6 @@ class YAMLStrategy(LanguageStrategy):
                 sort_keys=False,
                 indent=indent_size,
             )
-
             if not fixed.endswith("\n"):
                 fixed += "\n"
 
@@ -144,18 +142,17 @@ class YAMLStrategy(LanguageStrategy):
                 content=fixed,
                 errors=errors,
                 warnings=warnings,
-                original_valid=True,
+                original_valid=original_valid,
                 fixed_valid=True,
             )
-
         except yaml.YAMLError as e:
-            errors.append(f"Invalid YAML: {e}")
+            errors.append(f"Cannot fix YAML automatically: {e}")
             return FixResult(
                 success=False,
                 content=content,
                 errors=errors,
                 warnings=warnings,
-                original_valid=False,
+                original_valid=original_valid,
                 fixed_valid=False,
             )
 
