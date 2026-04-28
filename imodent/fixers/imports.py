@@ -1,8 +1,5 @@
 """Import fixer - handles unused/duplicate imports with options."""
 
-import re
-from pathlib import Path
-
 from .base import Fixer
 from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding, FixOption, Location
