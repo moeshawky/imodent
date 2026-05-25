@@ -41,13 +41,18 @@ class SubjectKey:
 
     @property
     def binding_key(self) -> tuple:
-        """Returns a tuple suitable for deduplication / identity checks."""
+        """Returns a tuple suitable for deduplication / identity checks.
+
+        Alias is NOT included — it is local binding metadata, not semantic
+        identity.  Two findings about ``from foo import Bar as X`` and
+        ``from foo import Bar as Y`` are about the same import origin and
+        should fuse.
+        """
         return (
             self.file.resolve(),
             self.kind,
             self.module or "",
             self.name or "",
-            self.alias or "",
             self.scope,
         )
 
@@ -327,15 +332,19 @@ class DecisionEngine:
                 finding_ids=[getattr(f, "id", "") for f in group],
             )
 
-            # Attach evidence
+            # Attach evidence: collect from finding data AND rehydrate from evidence_index
             for f in group:
                 f_evidence = f.data.get("evidence") if hasattr(f, "data") else []
                 for ev_dict in f_evidence if isinstance(f_evidence, list) else [f_evidence]:
                     if isinstance(ev_dict, Evidence):
                         candidate.evidence_ids.append(ev_dict.id)
-                        candidate.evidence_for.append(ev_dict)
+                        _attach_evidence_by_polarity(candidate, ev_dict)
                     elif isinstance(ev_dict, dict) and "id" in ev_dict:
                         candidate.evidence_ids.append(ev_dict["id"])
+                        # Rehydrate from evidence_index
+                        ev = evidence_index.get(ev_dict["id"])
+                        if ev is not None:
+                            _attach_evidence_by_polarity(candidate, ev)
 
             # Score confidence
             candidate.confidence = _score_confidence(rep, group, evidence_list)
@@ -359,6 +368,17 @@ class DecisionEngine:
 # ---------------------------------------------------------------------------
 #  Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _attach_evidence_by_polarity(
+    candidate: DecisionCandidate, evidence: Evidence
+) -> None:
+    """Attach evidence to candidate based on its polarity."""
+    if evidence.polarity == "opposes":
+        candidate.evidence_against.append(evidence)
+    else:
+        # "supports" and "context" both go to evidence_for with polarity preserved
+        candidate.evidence_for.append(evidence)
 
 
 def _subject_key_from_finding(finding) -> SubjectKey | None:
@@ -438,7 +458,11 @@ def _issue_type_from_finding(finding) -> str:
         "undefined_api": "undefined_api",
         "declared_behavior_unwired": "declared_behavior_unwired",
     }
-    return type_map.get(getattr(finding, "type", "unknown"), "unknown")
+    f_type = getattr(finding, "type", "unknown")
+    # Ruff F401 is an unused import, not generic lint
+    if f_type == "lint" and getattr(finding, "lint_code", None) == "F401":
+        return "unused_import"
+    return type_map.get(f_type, "unknown")
 
 
 def _resolve_proof_state(finding_or_rep, group: list) -> str:

@@ -469,6 +469,7 @@ def main():
         or args.report
         or args.interactive
         or args.fix
+        or args.confidence
     ):
         analyze_files(
             paths=args.path or [],

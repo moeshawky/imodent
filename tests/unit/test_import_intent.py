@@ -1,5 +1,4 @@
 """Tests for import intent detection in ImportAnalyzer."""
-import pytest
 from pathlib import Path
 from imodent.analysis.context import AnalysisConfig, AnalysisContext, FileInfo
 from imodent.analyzers.imports import (
@@ -9,9 +8,6 @@ from imodent.analyzers.imports import (
     _is_in_function_or_class,
     _extract_annotation_names,
     _has_type_annotations,
-    _RE_EXPORT_FILES,
-    _TYPING_MODULES,
-    _REGISTRATION_MODULES,
 )
 from imodent.analyzers.residue import ResidueAnalyzer
 from imodent.graph.dependency import build_dependency_graph

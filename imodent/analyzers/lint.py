@@ -12,7 +12,7 @@ from .base import Analyzer, AnalyzerCapability
 from ..analysis.context import AnalysisContext
 from ..analysis.evidence import Evidence
 from ..analysis.findings import Finding, Location, Severity
-from ..analysis.decisions import subject_key_for_lint  # noqa: E402
+from ..analysis.decisions import subject_key_for_lint, SubjectKey
 
 
 class LintAnalyzer(Analyzer):
@@ -143,8 +143,17 @@ class LintAnalyzer(Analyzer):
             message = diagnostic.get("message") or "Ruff lint diagnostic"
             proof_state_raw = _proof_state_for_ruff_code(code, file_path)
 
+            # Get source line for accurate import-form detection
+            source_lines = getattr(
+                context.files.get(file_path), "content", ""
+            ).split("\n") if file_path in context.files else []
+            source_line = ""
+            line_num = int(location_data.get("row") or 1)
+            if 1 <= line_num <= len(source_lines):
+                source_line = source_lines[line_num - 1]
+
             # Build subject key from diagnostic message (for fusion support)
-            sk = _subject_key_from_diagnostic(diagnostic, file_path, code)
+            sk = _subject_key_from_diagnostic(diagnostic, file_path, code, source_line)
 
             primary_evidence = Evidence(
                 kind="RuffDiagnostic",
@@ -197,7 +206,7 @@ class LintAnalyzer(Analyzer):
                         "evidence": evidence_entries,
                         "ruff": diagnostic,
                         "import_info": _import_info_from_diagnostic(
-                            diagnostic, file_path
+                            diagnostic, file_path, source_line
                         ),
                     },
                 )
@@ -257,14 +266,22 @@ def _first_backtick_value(message: str) -> str:
 
 
 def _subject_key_from_diagnostic(
-    diagnostic: dict, file_path: Path, code: str
+    diagnostic: dict, file_path: Path, code: str, source_line: str = ""
 ) -> "SubjectKey | None":
     """Build a SubjectKey from a Ruff diagnostic for fusion support."""
     if code == "F401":
         message = diagnostic.get("message") or ""
         imported = _first_backtick_value(message)
-        module = ".".join(imported.split(".")[:-1]) if "." in imported else None
-        name = imported.split(".")[-1] if imported else None
+        if source_line.strip().startswith("import ") and "." in imported:
+            module = imported
+            name = None
+        elif "." in imported:
+            parts = imported.rsplit(".", 1)
+            module = parts[0] if len(parts) > 1 else None
+            name = parts[1] if len(parts) > 1 else imported
+        else:
+            module = None
+            name = imported
         return subject_key_for_lint(file=file_path, code=code, module=module, name=name)
     return subject_key_for_lint(file=file_path, code=code)
 
@@ -292,7 +309,7 @@ def _strength_for_ruff_code(code: str) -> float:
 
 
 def _import_info_from_diagnostic(
-    diagnostic: dict, file_path: Path
+    diagnostic: dict, file_path: Path, source_line: str = ""
 ) -> dict:
     """Extract import_info from diagnostic message for fusion with local analyzer."""
     code = diagnostic.get("code")
@@ -300,8 +317,21 @@ def _import_info_from_diagnostic(
         return {}
     message = diagnostic.get("message") or ""
     imported = _first_backtick_value(message)
-    module = ".".join(imported.split(".")[:-1]) if "." in imported else None
-    name = imported.split(".")[-1] if imported else None
+
+    # Determine import form from the source line when available
+    if source_line.strip().startswith("import ") and "." in imported:
+        # Bare import with dots: import os.path  → module="os.path", name=None
+        module = imported
+        name = None
+    elif "." in imported:
+        # From-import: from os import path  → module="os", name="path"
+        parts = imported.rsplit(".", 1)
+        module = parts[0] if len(parts) > 1 else None
+        name = parts[1] if len(parts) > 1 else imported
+    else:
+        module = None
+        name = imported
+
     return {
         "module": module,
         "name": name,

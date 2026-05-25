@@ -13,13 +13,17 @@ def load_config_from_yaml(path: Path) -> Optional[dict]:
     """Load config from a YAML file, returning raw dict or None."""
     try:
         import yaml
+    except ImportError:
+        return None
 
+    try:
         with open(path) as f:
             data = yaml.safe_load(f)
         if isinstance(data, dict):
             return data
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"Warning: {path.name} exists but could not be parsed: {e}. Using defaults.", file=sys.stderr)
     return None
 
 
@@ -49,7 +53,9 @@ def load_config_from_pyproject(path: Path) -> Optional[dict]:
         with open(path, "rb") as f:
             data = loader(f)
         return data.get("tool", {}).get("imodent")
-    except Exception:
+    except Exception as e:
+        import sys
+        print(f"Warning: pyproject.toml exists but could not be parsed: {e}. Using defaults.", file=sys.stderr)
         return None
 
 

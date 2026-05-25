@@ -96,8 +96,8 @@ class TestInteractivePrompt:
         fixer = ImportFixer()
         context = AnalysisContext()
 
-        # Mock input to select option 2
-        with patch("builtins.input", return_value="2"):
+        # Mock input to select option 2 + TTY for interactive prompt
+        with patch("builtins.input", return_value="2"), patch("sys.stdin.isatty", return_value=True):
             result = coordinator._get_user_choice(finding, fixer, context)
 
         assert result is not None
@@ -121,7 +121,7 @@ class TestInteractivePrompt:
         fixer = ImportFixer()
         context = AnalysisContext()
 
-        with patch("builtins.input", return_value="s"):
+        with patch("builtins.input", return_value="s"), patch("sys.stdin.isatty", return_value=True):
             result = coordinator._get_user_choice(finding, fixer, context)
 
         assert result is None
@@ -143,7 +143,7 @@ class TestInteractivePrompt:
         fixer = ImportFixer()
         context = AnalysisContext()
 
-        with patch("builtins.input", side_effect=EOFError):
+        with patch("builtins.input", side_effect=EOFError), patch("sys.stdin.isatty", return_value=True):
             result = coordinator._get_user_choice(finding, fixer, context)
 
         assert result is None

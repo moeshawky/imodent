@@ -34,3 +34,6 @@ Thumbs.db
 # Temp / scratch files
 test.txt
 *.tmp
+
+.codegraph/
+AGENTS.md

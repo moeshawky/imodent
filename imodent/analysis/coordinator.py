@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Optional
 from enum import Enum
 import fnmatch
+import sys
 import time
 
 from .context import AnalysisContext, AnalysisConfig, FileInfo
 from .findings import Finding, FixOption, ProofState
-from .decisions import DecisionEngine, subject_key_for_import, subject_key_for_lint
+from .decisions import DecisionEngine, _subject_key_from_finding
 from ..graph.dependency import build_dependency_graph
 from ..interfaces import FixResult
 from ..project.discovery import is_generated_artifact
@@ -150,6 +151,14 @@ class AnalysisCoordinator:
         Returns:
             Dict of path -> FixResult
         """
+        if mode == FixMode.INTERACTIVE and not sys.stdin.isatty():
+            print(
+                "Warning: Interactive mode requested but stdin is not a TTY. "
+                "Falling back to safe-auto fix mode.",
+                file=sys.stderr,
+            )
+            mode = FixMode.SAFE_AUTO
+
         results = {}
         decisions = decisions or {}
 
@@ -352,6 +361,14 @@ class AnalysisCoordinator:
         context: AnalysisContext,
     ) -> Optional[FixOption]:
         """Get user's choice for interactive mode. Prompts user, doesn't assume."""
+        if not sys.stdin.isatty():
+            print(
+                "Warning: stdin is not a TTY — cannot prompt interactively. "
+                "Skipping finding.",
+                file=sys.stderr,
+            )
+            return None
+
         options = fixer.get_options(finding, context)
 
         print(f"\n{finding.severity.value.upper()}: {finding.message}")
@@ -378,7 +395,13 @@ class AnalysisCoordinator:
             except ValueError:
                 print(f"  Invalid: choose 1-{len(options)} or 's'")
             except EOFError:
-                print("\n  → EOF, skipping rest")
+                if sys.stdin.isatty():
+                    print("\n  → EOF, TTY disconnected — skipping rest")
+                else:
+                    print(
+                        "\n  → EOF on non-TTY — skipping rest",
+                        file=sys.stderr,
+                    )
                 return None
 
 
@@ -418,65 +441,13 @@ def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
 
     deduplicated: list[Finding] = []
     for finding in findings:
-        if finding.type == "unused_import_file" and finding.lint_source != "ruff":
+        if finding.type in ("unused_import_file", "unused_import") and finding.lint_source != "ruff":
             sk = _subject_key_from_finding(finding)
             if sk is not None and sk.binding_key in ruff_subject_keys:
                 # Ruff already covers this subject; skip the local duplicate
                 continue
         deduplicated.append(finding)
     return deduplicated
-
-
-def _subject_key_from_finding(finding) -> "SubjectKey | None":
-    """Extract a SubjectKey from a Finding for deduplication.
-
-    For Ruff F401 diagnostics we use an import-style key so that they
-    match the local unused-import findings by semantic subject.
-    """
-    from .decisions import subject_key_for_import, subject_key_for_lint
-
-    file = getattr(finding, "file", Path("."))
-    lint_code = getattr(finding, "lint_code", None)
-    lint_source = getattr(finding, "lint_source", None)
-    import_module = getattr(finding, "import_module", None)
-    import_name = getattr(finding, "import_name", None)
-    data = getattr(finding, "data", {}) or {}
-    import_info = data.get("import_info") or {}
-
-    if lint_source == "ruff" and lint_code == "F401":
-        module = import_info.get("module") or import_module
-        name = import_info.get("name") or import_name
-        # Normalize to import-style key so Ruff F401 and local
-        # unused-import findings share the same binding key.
-        return subject_key_for_import(
-            file=file,
-            module=module,
-            name=name,
-            alias=None,
-        )
-
-    if lint_source == "ruff" and lint_code:
-        module = import_info.get("module") or import_module
-        name = import_info.get("name") or import_name
-        return subject_key_for_lint(
-            file=file,
-            code=lint_code,
-            module=module,
-            name=name,
-        )
-
-    if finding.type in ("unused_import", "unused_import_file", "import_intent"):
-        module = import_info.get("module") or import_module
-        name = import_info.get("name") or import_name
-        alias = import_info.get("alias")
-        return subject_key_for_import(
-            file=file,
-            module=module,
-            name=name,
-            alias=alias,
-        )
-
-    return None
 
 
 class AnalysisResult:
