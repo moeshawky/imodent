@@ -8,22 +8,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from imodent.analysis.context import AnalysisConfig, AnalysisContext, FileInfo
 from imodent.analysis.coordinator import (
     AnalysisCoordinator,
-    FixMode,
     _deduplicate_findings,
 )
 from imodent.analysis.decisions import (
     DecisionEngine,
-    SubjectKey,
     subject_key_for_import,
-    subject_key_for_lint,
 )
 from imodent.analysis.evidence import Evidence
-from imodent.analysis.findings import Finding, Severity, Location, ProofState
+from imodent.analysis.findings import Finding, Severity, Location
 from imodent.analyzers.imports import ImportAnalyzer, _classify_try_context
 from imodent.graph.dependency import build_dependency_graph
 from imodent.graph.imports import ImportInfo
@@ -419,3 +414,327 @@ class TestEvidenceToDict:
         assert d["claim"] == "test claim"
         assert d["polarity"] == "supports"
         assert d["strength"] == 0.75
+
+
+# ---------------------------------------------------------------------------
+# F401 → UNUSED_IMPORT classification  (Bug 3 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestF401ClassifiedAsUnusedImport:
+    def test_f401_issue_type_is_unused_import(self):
+        """Ruff F401 should be classified as UNUSED_IMPORT, not generic LINT."""
+        from imodent.analysis.decisions import _issue_type_from_finding
+        f = Finding.create(
+            type="lint", severity=Severity.WARNING,
+            file=Path("test.py"), message="F401: unused",
+            lint_code="F401", lint_source="ruff",
+        )
+        assert _issue_type_from_finding(f) == "unused_import"
+
+    def test_f821_remains_lint_type(self):
+        """F821 remains lint type (not an import issue)."""
+        from imodent.analysis.decisions import _issue_type_from_finding
+        f = Finding.create(
+            type="lint", severity=Severity.ERROR,
+            file=Path("test.py"), message="F821: Undefined name",
+            lint_code="F821", lint_source="ruff",
+        )
+        assert _issue_type_from_finding(f) == "lint"
+
+
+# ---------------------------------------------------------------------------
+# Evidence rehydration  (Bug 2 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestEvidenceRehydration:
+    def test_candidate_has_evidence_for_from_evidence_list(self):
+        """Evidence index should rehydrate evidence_for from evidence_list."""
+        from imodent.analysis.decisions import DecisionEngine
+        file = Path("/tmp/sample.py").resolve()
+        ev = Evidence(
+            id=42, kind="RuffDiagnostic", source="ruff",
+            file=file, location=Location(line=1), subject="F401",
+            claim="unused_import", polarity="supports", strength=0.85,
+        )
+        finding = Finding(
+            id="f1", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `os` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "evidence": [{"id": 42}],
+                "import_info": {"module": None, "name": "os", "alias": None},
+            },
+        )
+        candidates = DecisionEngine.build_candidates([finding], [ev])
+        assert len(candidates) == 1
+        assert len(candidates[0].evidence_for) >= 1
+        assert candidates[0].evidence_for[0].id == 42
+        assert candidates[0].evidence_for[0].polarity == "supports"
+
+    def test_opposes_evidence_goes_to_evidence_against(self):
+        """Evidence with polarity=opposes goes to evidence_against."""
+        from imodent.analysis.decisions import DecisionEngine
+        file = Path("/tmp/sample.py").resolve()
+        ev = Evidence(
+            id=99, kind="ContextEvidence", source="analyst",
+            file=file, location=Location(line=1), subject="F401",
+            claim="public_api_reexport", polarity="opposes", strength=0.3,
+        )
+        finding = Finding(
+            id="f2", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `mypkg.Foo` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "evidence": [{"id": 99}],
+                "import_info": {"module": "mypkg", "name": "Foo", "alias": None},
+            },
+        )
+        candidates = DecisionEngine.build_candidates([finding], [ev])
+        assert len(candidates[0].evidence_against) >= 1
+        assert candidates[0].evidence_against[0].id == 99
+
+
+# ---------------------------------------------------------------------------
+# Subject-key fusion for specific import forms  (Bug 4 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestImportFormFusion:
+    def test_bare_dotted_import_fuses_with_ruff(self):
+        """import os.path should fuse when Ruff and AST use different module splits."""
+        file = Path("/tmp/sample.py").resolve()
+        ruff = Finding(
+            id="r1", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `os.path` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "import_info": {"module": "os.path", "name": None, "alias": None},
+            },
+        )
+        # local finding: same as what ImportAnalyzer produces for bare import
+        local = Finding(
+            id="l1", type="unused_import_file", severity=Severity.INFO,
+            file=file, location=Location(line=1),
+            message="Import 'import os.path' is not used in this file",
+            fixable=True, auto_fix_safe=False,
+            import_module="os.path", import_name=None,
+            data={"import_info": {"module": "os.path", "name": None, "alias": None}},
+        )
+        result = _deduplicate_findings([ruff, local])
+        assert len(result) == 1
+        assert result[0].lint_source == "ruff"
+
+    def test_bare_aliased_import_fuses_with_ruff(self):
+        """import numpy as np: alias should not block fusion."""
+        file = Path("/tmp/sample.py").resolve()
+        ruff = Finding(
+            id="r2", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `numpy` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "import_info": {"module": "numpy", "name": None, "alias": None},
+            },
+        )
+        local = Finding(
+            id="l2", type="unused_import_file", severity=Severity.INFO,
+            file=file, location=Location(line=1),
+            message="Import 'import numpy as np' is not used in this file",
+            fixable=True, auto_fix_safe=False,
+            import_module="numpy", import_name=None,
+            data={"import_info": {"module": "numpy", "name": None, "alias": "np"}},
+        )
+        result = _deduplicate_findings([ruff, local])
+        assert len(result) == 1
+        assert result[0].lint_source == "ruff"
+
+    def test_from_import_alias_fuses_with_ruff(self):
+        """from typing import Dict as D: alias should not block fusion."""
+        file = Path("/tmp/sample.py").resolve()
+        ruff = Finding(
+            id="r3", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `typing.Dict` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "import_info": {"module": "typing", "name": "Dict", "alias": None},
+            },
+        )
+        local = Finding(
+            id="l3", type="unused_import_file", severity=Severity.INFO,
+            file=file, location=Location(line=1),
+            message="Import 'from typing import Dict as D' is not used in this file",
+            fixable=True, auto_fix_safe=False,
+            import_module="typing", import_name="Dict",
+            data={"import_info": {"module": "typing", "name": "Dict", "alias": "D"}},
+        )
+        result = _deduplicate_findings([ruff, local])
+        assert len(result) == 1
+        assert result[0].lint_source == "ruff"
+
+    def test_grouped_one_used_one_unused_not_fused(self):
+        """from x import a, b where a is used and b is unused: each is separate subject."""
+        file = Path("/tmp/sample.py").resolve()
+        ruff_a = Finding(
+            id="ra", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `x.a` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "import_info": {"module": "x", "name": "a", "alias": None},
+            },
+        )
+        ruff_b = Finding(
+            id="rb", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `x.b` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "import_info": {"module": "x", "name": "b", "alias": None},
+            },
+        )
+        local_a = Finding(
+            id="la", type="unused_import_file", severity=Severity.INFO,
+            file=file, location=Location(line=1),
+            message="Import 'from x import a' is not used",
+            fixable=True, auto_fix_safe=False,
+            import_module="x", import_name="a",
+            data={"import_info": {"module": "x", "name": "a", "alias": None}},
+        )
+        result = _deduplicate_findings([ruff_a, ruff_b, local_a])
+        # a should be deduped (Ruff covers it), b is Ruff-only
+        assert len(result) == 2
+        assert all(f.lint_source == "ruff" for f in result)
+
+    def test_unused_import_and_unused_import_file_both_deduped(self):
+        """Both unused_import and unused_import_file local types should be deduped."""
+        file = Path("/tmp/sample.py").resolve()
+        ruff = Finding(
+            id="r", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `typing.Dict` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "import_info": {"module": "typing", "name": "Dict", "alias": None},
+            },
+        )
+        local_file = Finding(
+            id="lf", type="unused_import_file", severity=Severity.INFO,
+            file=file, location=Location(line=1),
+            message="Import 'from typing import Dict' is not used in this file",
+            fixable=True, auto_fix_safe=False,
+            import_module="typing", import_name="Dict",
+            data={"import_info": {"module": "typing", "name": "Dict", "alias": None}},
+        )
+        local_usage = Finding(
+            id="lu", type="unused_import", severity=Severity.INFO,
+            file=file, location=Location(line=1),
+            message="Import 'from typing import Dict' may be unused",
+            fixable=True, auto_fix_safe=False,
+            import_module="typing", import_name="Dict",
+            data={"import_info": {"module": "typing", "name": "Dict", "alias": None, "is_from": True, "intent": "usage"}},
+        )
+        result = _deduplicate_findings([ruff, local_file, local_usage])
+        assert len(result) == 1
+        assert result[0].lint_source == "ruff"
+
+
+# ---------------------------------------------------------------------------
+# G-ERR-2: AST guard — unanalyzable_file emitted when ast_tree is None
+# ---------------------------------------------------------------------------
+
+
+class TestUnanalyzableFileGuard:
+    """ImportAnalyzer emits unanalyzable_file whenever ast_tree is None."""
+
+    def test_emits_finding_when_ast_tree_none_and_no_syntax_error_flag(self, tmp_path):
+        """Emit unanalyzable_file when ast_tree is None regardless of has_syntax_errors.
+
+        The old guard required `has_syntax_errors AND ast_tree is None`.
+        This test constructs a FileInfo with ast_tree=None, has_syntax_errors=False
+        (an artificial state that could arise from external construction) and
+        verifies the new guard still emits the diagnostic.
+        """
+        py_file = tmp_path / "broken.py"
+        py_file.write_text("def f():\n    pass\n")
+
+        file_info = FileInfo(
+            path=py_file,
+            content="def f():\n    pass\n",
+            language="python",
+            has_syntax_errors=False,  # NOT flagged as syntax error
+            ast_tree=None,            # but ast_tree is None — the new guard catches this
+        )
+
+        context = AnalysisContext(
+            files={py_file: file_info},
+            config=AnalysisConfig(check_imports=True, check_lint=False),
+        )
+        build_dependency_graph(context.files, tmp_path)
+
+        findings = ImportAnalyzer().analyze(context)
+        unanalyzable = [f for f in findings if f.type == "unanalyzable_file"]
+        assert len(unanalyzable) == 1
+        assert unanalyzable[0].file == py_file
+
+    def test_no_finding_when_ast_tree_present(self, tmp_path):
+        """When ast_tree is present, no unanalyzable_file finding is emitted."""
+        import ast
+
+        py_file = tmp_path / "ok.py"
+        py_file.write_text("import os\n")
+
+        file_info = FileInfo(
+            path=py_file,
+            content="import os\n",
+            language="python",
+            has_syntax_errors=False,
+            ast_tree=ast.parse("import os\n"),
+        )
+
+        context = AnalysisContext(
+            files={py_file: file_info},
+            config=AnalysisConfig(check_imports=True, check_lint=False),
+        )
+        build_dependency_graph(context.files, tmp_path)
+
+        findings = ImportAnalyzer().analyze(context)
+        assert not any(f.type == "unanalyzable_file" for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# context.py — AnalysisContext.findings type annotation
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisContextTyping:
+    def test_findings_field_annotation_is_list_of_finding(self):
+        """AnalysisContext.findings must be annotated as list[Finding], not plain list."""
+        import dataclasses
+        import typing
+
+        fields = {f.name: f for f in dataclasses.fields(AnalysisContext)}
+        assert "findings" in fields, "AnalysisContext must have a 'findings' field"
+
+        hint = typing.get_type_hints(AnalysisContext).get("findings")
+        assert hint is not None, "findings field must have a type annotation"
+
+        # Accept both list[Finding] and List[Finding] (generic alias forms)
+        args = getattr(hint, "__args__", None)
+        assert args is not None and Finding in args, (
+            f"findings must be annotated as list[Finding], got {hint!r}"
+        )
+

@@ -88,6 +88,27 @@ list:
         content = '{"key": "value"}\n'
         assert self.strategy.detect(content) is False
 
+    def test_detect_not_yaml_json_array(self):
+        """Should not detect a JSON array as YAML."""
+        assert self.strategy.detect("[1, 2, 3]") is False
+
+    def test_detect_not_yaml_json_with_colon_in_value(self):
+        """Valid JSON whose string values contain colons must not be detected as YAML."""
+        content = '{"url": "https://example.com", "path": "/foo/bar"}\n'
+        assert self.strategy.detect(content) is False
+
+    def test_detect_flow_style_yaml_single_entry(self):
+        """Single-entry flow-style YAML {foo: bar} must be detected as YAML."""
+        assert self.strategy.detect("{foo: bar}") is True
+
+    def test_detect_flow_style_yaml_multi_entry(self):
+        """Multi-entry flow-style YAML {foo: bar, baz: qux} must be detected as YAML."""
+        assert self.strategy.detect("{foo: bar, baz: qux}") is True
+
+    def test_detect_flow_style_yaml_with_doc_start(self):
+        """Flow-style YAML preceded by --- document marker must be detected."""
+        assert self.strategy.detect("---\n{foo: bar}\n") is True
+
     def test_detect_not_yaml_plain_text(self):
         """Should not detect plain text as YAML."""
         content = "This is just plain text\nwith no colons\n"

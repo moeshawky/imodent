@@ -363,6 +363,19 @@ class ImportAnalyzer(Analyzer):
             if file_info.language != "python":
                 continue
 
+            if file_info.ast_tree is None:
+                findings.append(
+                    Finding.create(
+                        type="unanalyzable_file",
+                        severity=Severity.INFO,
+                        file=path,
+                        message="Skipped: file has syntax errors — import analysis unavailable",
+                        fixable=False,
+                        auto_fix_safe=False,
+                    )
+                )
+                continue
+
             imports = extract_imports(file_info.content, path)
             type_use_names = (
                 _collect_type_use_names(file_info.ast_tree)

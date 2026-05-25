@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from .evidence import Evidence
-from .findings import Location
+from .findings import Finding, Location
 
 
 @dataclass
@@ -164,7 +164,7 @@ class AnalysisContext:
 
     files: dict[Path, FileInfo] = field(default_factory=dict)
     graph: DependencyGraph = field(default_factory=DependencyGraph)
-    findings: list = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     config: AnalysisConfig = field(default_factory=AnalysisConfig)
     project_root: Path | None = None

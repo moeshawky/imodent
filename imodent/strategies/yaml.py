@@ -4,6 +4,7 @@ Handles YAML formatting and validation using PyYAML.
 Broken YAML is flagged with diagnostics, not silently rejected.
 """
 
+import json
 import re
 from typing import List, Optional, Tuple
 
@@ -29,20 +30,41 @@ class YAMLStrategy(LanguageStrategy):
         Detects the LANGUAGE, not validity. Broken YAML is still YAML —
         it just needs fixing. Returns True if content has YAML patterns
         (key: value, --- document start), even if it has syntax errors.
+
+        Discrimination strategy for ``{``/``[``-prefixed content:
+        1. Try ``json.loads()`` — if it succeeds, it is valid JSON, not YAML.
+        2. If JSON parsing fails, the content is either broken JSON or
+           flow-style YAML.  Decide by looking for unambiguous YAML signals
+           (bare unquoted key-colon, ``---``, anchor/alias markers).
         """
         stripped = content.strip()
         if not stripped:
             return False
 
-        # Not JSON — JSON has its own strategy
+        # Content starting with { or [ could be JSON or flow-style YAML.
+        # Use the actual JSON parser to discriminate rather than heuristics.
         if re.search(r"^\s*[\{\[]", stripped):
-            return False
+            try:
+                json.loads(stripped)
+                # Parsed as valid JSON — this is JSON, not YAML.
+                return False
+            except (json.JSONDecodeError, ValueError):
+                # Not valid JSON.  Check for unambiguous YAML signals:
+                #   - document start marker
+                #   - bare unquoted key followed by colon+space (flow mapping)
+                #   - YAML anchor (&) or alias (*) markers
+                # NOTE: no ^ anchor — the signal may appear inside braces.
+                return bool(
+                    "---" in stripped
+                    or re.search(r"[a-zA-Z_][a-zA-Z0-9_.-]*\s*:\s", stripped)
+                    or "&" in stripped
+                )
 
-        # YAML indicators: document start
+        # Standard (non-JSON-like) YAML indicators.
         if stripped.startswith("---"):
             return True
 
-        # Look for YAML key patterns (key: value)
+        # Bare key: value pattern anchored to line start.
         if re.search(r"^[a-zA-Z_][a-zA-Z0-9_.-]*\s*:", stripped, re.MULTILINE):
             return True
 
