@@ -14,6 +14,7 @@ from .pipeline import FixPipeline
 from .registry import StrategyRegistry
 from .analysis.coordinator import AnalysisCoordinator, FixMode
 from .analysis.findings import Severity
+from .project.discovery import is_generated_artifact
 from .project.project_context import ProjectContext
 
 
@@ -47,7 +48,9 @@ def _collect_targets(file_path: Path, recursive: bool = False) -> list[Path]:
     return sorted(
         f.resolve()
         for f in file_path.glob(pattern)
-        if f.is_file() and f.suffix.lower() in handled
+        if f.is_file()
+        and f.suffix.lower() in handled
+        and not is_generated_artifact(f.resolve())
     )
 
 
@@ -175,6 +178,12 @@ def analyze_files(
         for f in shown:
             loc = f":{f.location.line}" if f.location else ""
             print(f" {f.file.name}{loc}: {f.message}")
+            if verbose and f.proof_state:
+                print(f"   proof_state: {f.proof_state}")
+                evidence = f.data.get("evidence") or []
+                if evidence:
+                    kinds = sorted({item.get("kind", "evidence") for item in evidence})
+                    print(f"   evidence: {', '.join(kinds)}")
         if not verbose and len(bucket) > 10:
             print(f" … +{len(bucket) - 10} more")
 
@@ -364,7 +373,7 @@ def main():
     scan_group.add_argument(
         "--lint",
         action="store_true",
-        help="run lint checks via ruff",
+        help="run Ruff-backed lint checks and attach oracle evidence",
     )
     scan_group.add_argument(
         "--advisory",

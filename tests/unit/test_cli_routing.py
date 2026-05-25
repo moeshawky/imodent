@@ -181,8 +181,12 @@ class TestAnalyzeFiles:
         """Coordinator discovery is the scan authority for excludes and path identity."""
         keep = tmp_path / "keep.py"
         excluded = tmp_path / "test_excluded.py"
+        build_dir = tmp_path / "build" / "lib"
+        build_dir.mkdir(parents=True)
+        generated = build_dir / "keep.py"
         keep.write_text("x = 1\n")
         excluded.write_text("y = 1\n")
+        generated.write_text("z = 1\n")
 
         project_context = ProjectContext.from_root(tmp_path)
         coordinator = AnalysisCoordinator(project_context=project_context)
@@ -190,7 +194,55 @@ class TestAnalyzeFiles:
 
         assert keep.resolve() in result.context.files
         assert excluded.resolve() not in result.context.files
+        assert generated.resolve() not in result.context.files
         assert all(path.is_absolute() for path in result.context.files)
+
+    def test_explicit_generated_file_is_still_analyzed(self, tmp_path):
+        """Explicit files remain visible even under default generated-artifact excludes."""
+        build_dir = tmp_path / "build" / "lib"
+        build_dir.mkdir(parents=True)
+        generated = build_dir / "keep.py"
+        generated.write_text("z = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([generated])
+
+        assert generated.resolve() in result.context.files
+
+    def test_lint_flag_runs_ruff_oracle(self, tmp_path):
+        """--lint should produce Ruff diagnostics instead of residue-only lint findings."""
+        test_file = tmp_path / "sample.py"
+        test_file.write_text("def f():\n    unused = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = False
+        project_context.config.check_lint = True
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([test_file])
+
+        assert any(
+            f.type == "lint" and f.lint_source == "ruff" and f.lint_code == "F841"
+            for f in result.findings
+        )
+        assert not any(f.type == "declared_behavior_unwired" for f in result.findings)
+
+    def test_ruff_unused_import_deduplicates_local_unused_import(self, tmp_path):
+        """When --imports and --lint run together, F401 owns duplicate unused-import output."""
+        test_file = tmp_path / "sample.py"
+        test_file.write_text("import os\n\nx = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = True
+        project_context.config.check_lint = True
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([test_file])
+
+        assert any(
+            f.type == "lint" and f.lint_source == "ruff" and f.lint_code == "F401"
+            for f in result.findings
+        )
+        assert not any(f.type == "unused_import_file" for f in result.findings)
 
 
 class TestCLIHelp:

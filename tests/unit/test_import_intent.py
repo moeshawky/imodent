@@ -38,16 +38,33 @@ class TestDetectImportIntent:
     def test_re_export_file(self):
         """Imports in __init__.py should be detected as re_export."""
         imp = ImportInfo(
-            module="typing",
-            name="List",
+            module="sample.public",
+            name="PublicClass",
             alias=None,
             line=1,
             is_from_import=True,
             file=Path("__init__.py"),
         )
-        intent, reason, is_safe = _detect_import_intent(imp, "from typing import List", Path("__init__.py"))
+        intent, reason, is_safe = _detect_import_intent(
+            imp, "from sample.public import PublicClass", Path("__init__.py")
+        )
         assert intent == "re_export"
         assert is_safe is False
+
+    def test_stdlib_import_in_init_is_not_blanket_reexport(self):
+        """__init__.py does not protect unused stdlib imports by convention."""
+        imp = ImportInfo(
+            module="pathlib",
+            name="Path",
+            alias=None,
+            line=1,
+            is_from_import=True,
+            file=Path("__init__.py"),
+        )
+        intent, reason, is_safe = _detect_import_intent(
+            imp, "from pathlib import Path", Path("__init__.py")
+        )
+        assert intent == "usage"
 
     def test_interfaces_file_re_export(self):
         """Imports in interfaces.py should be detected as re_export."""
@@ -63,7 +80,7 @@ class TestDetectImportIntent:
         assert intent == "re_export"
 
     def test_typing_module_import(self):
-        """Imports from typing modules should be detected as typing."""
+        """Typing imports require an exact type-use edge."""
         imp = ImportInfo(
             module="typing",
             name="List",
@@ -72,7 +89,12 @@ class TestDetectImportIntent:
             is_from_import=True,
             file=Path("some_module.py"),
         )
-        intent, reason, is_safe = _detect_import_intent(imp, "from typing import List", Path("some_module.py"))
+        intent, reason, is_safe = _detect_import_intent(
+            imp,
+            "from typing import List\nx: List[int]\n",
+            Path("some_module.py"),
+            {"List"},
+        )
         assert intent == "typing"
         assert is_safe is False
 
@@ -361,3 +383,68 @@ class TestResidueSemantics:
         fix_results = coordinator.fix(duplicates, result.context, mode=FixMode.SAFE_AUTO)
         assert fix_results == {}
         assert file_path.read_text() == source
+
+    def test_unused_typing_import_without_exact_type_use_is_not_intent(self, tmp_path):
+        """A typing alias is not intent unless that alias is used in a type position."""
+        source = "from typing import Dict\n\nvalue = 1\n"
+        file_path = tmp_path / "sample.py"
+        file_path.write_text(source)
+        file_info = FileInfo.from_path(file_path)
+        context = AnalysisContext(
+            files={file_path: file_info},
+            graph=build_dependency_graph({file_path: file_info}, tmp_path),
+            config=AnalysisConfig(check_imports=True, check_lint=False),
+        )
+
+        findings = ImportAnalyzer().analyze(context)
+
+        assert any(
+            f.type == "unused_import_file" and f.import_name == "Dict"
+            for f in findings
+        )
+        assert not any(
+            f.type == "import_intent" and f.import_name == "Dict"
+            for f in findings
+        )
+
+    def test_string_annotation_counts_as_exact_type_use(self, tmp_path):
+        """String annotations count as type-use edges for the exact imported alias."""
+        source = 'from typing import Dict\n\ndef f(value: "Dict[str, int]") -> None:\n    pass\n'
+        file_path = tmp_path / "sample.py"
+        file_path.write_text(source)
+        file_info = FileInfo.from_path(file_path)
+        context = AnalysisContext(
+            files={file_path: file_info},
+            graph=build_dependency_graph({file_path: file_info}, tmp_path),
+            config=AnalysisConfig(check_imports=True, check_lint=False),
+        )
+
+        findings = ImportAnalyzer().analyze(context)
+
+        assert not any(
+            f.type == "unused_import_file" and f.import_name == "Dict"
+            for f in findings
+        )
+
+    def test_grouped_typing_imports_are_checked_alias_by_alias(self, tmp_path):
+        """A used typing alias does not protect unused aliases from the same import line."""
+        source = 'from typing import Dict, List\n\ndef f(value: "List[str]") -> None:\n    pass\n'
+        file_path = tmp_path / "sample.py"
+        file_path.write_text(source)
+        file_info = FileInfo.from_path(file_path)
+        context = AnalysisContext(
+            files={file_path: file_info},
+            graph=build_dependency_graph({file_path: file_info}, tmp_path),
+            config=AnalysisConfig(check_imports=True, check_lint=False),
+        )
+
+        findings = ImportAnalyzer().analyze(context)
+
+        assert any(
+            f.type == "unused_import_file" and f.import_name == "Dict"
+            for f in findings
+        )
+        assert not any(
+            f.type == "unused_import_file" and f.import_name == "List"
+            for f in findings
+        )

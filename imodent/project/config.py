@@ -73,6 +73,7 @@ def _apply_dict_to_config(config: AnalysisConfig, data: dict) -> AnalysisConfig:
         config.include_patterns = list(data["include_patterns"])
     if "exclude_patterns" in data:
         config.exclude_patterns = list(data["exclude_patterns"])
+        config.exclude_patterns_from_config = True
     if "use_ruff" in data:
         config.use_ruff = bool(data["use_ruff"])
     if "use_pyright" in data:

@@ -27,12 +27,15 @@ class TestNoUnsafeOperations:
                         pytest.fail(f"{py_file.name} uses {func.id}() — unsafe")
 
     def test_no_subprocess(self):
-        """No subprocess calls in source code."""
+        """Subprocess use is restricted to the Ruff tool adapter."""
         source = Path("/srv/imodent/imodent")
+        allowed = {source / "analyzers" / "lint.py"}
         for py_file in source.rglob("*.py"):
             content = py_file.read_text()
             if "subprocess" in content:
-                # Check it's not in a comment
+                if py_file in allowed:
+                    assert "shell=True" not in content
+                    continue
                 tree = ast.parse(content)
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Import):

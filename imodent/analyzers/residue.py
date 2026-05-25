@@ -43,9 +43,7 @@ class ResidueAnalyzer(Analyzer):
         cli_flag = self._find_argparse_flag(context, "--lint")
         analyze_param = self._find_text(context, "analyze_lint")
         config_field = self._find_text(context, "check_lint")
-        lint_executor = self._find_regex(
-            context, r"class\s+LintAnalyzer\b|def\s+analyze_lint\b"
-        )
+        lint_executor = self._find_lint_executor(context)
 
         if not (cli_flag and analyze_param and config_field):
             return None
@@ -97,6 +95,24 @@ class ResidueAnalyzer(Analyzer):
             for lineno, line in enumerate(file_info.content.splitlines(), 1):
                 if compiled.search(line):
                     return path, lineno, line.strip()
+        return None
+
+    @staticmethod
+    def _find_lint_executor(
+        context: AnalysisContext,
+    ) -> tuple[Path, int, str] | None:
+        """Find a real lint executor, ignoring comment-only mentions."""
+        for path, file_info in context.files.items():
+            if file_info.ast_tree is None:
+                continue
+            lines = file_info.content.splitlines()
+            for node in ast.walk(file_info.ast_tree):
+                if isinstance(node, ast.ClassDef) and (
+                    node.name == "LintAnalyzer" or node.name.endswith("LintAnalyzer")
+                ):
+                    return path, node.lineno, lines[node.lineno - 1].strip()
+                if isinstance(node, ast.FunctionDef) and node.name == "analyze_lint":
+                    return path, node.lineno, lines[node.lineno - 1].strip()
         return None
 
     @staticmethod

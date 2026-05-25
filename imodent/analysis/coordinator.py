@@ -5,12 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 from enum import Enum
+import fnmatch
 import time
 
 from .context import AnalysisContext, AnalysisConfig, FileInfo
-from .findings import Finding, FixOption
+from .findings import Finding, FixOption, ProofState
 from ..graph.dependency import build_dependency_graph
 from ..interfaces import FixResult
+from ..project.discovery import is_generated_artifact
 from ..project.project_context import ProjectContext
 
 
@@ -50,10 +52,11 @@ class AnalysisCoordinator:
     def _load_plugins(self):
         """Load analyzer and fixer plugins."""
         from ..analyzers.imports import ImportAnalyzer
+        from ..analyzers.lint import LintAnalyzer
         from ..analyzers.residue import ResidueAnalyzer
         from ..fixers.imports import ImportFixer
 
-        self._analyzers = [ImportAnalyzer(), ResidueAnalyzer()]
+        self._analyzers = [ImportAnalyzer(), LintAnalyzer(), ResidueAnalyzer()]
         self._fixers = [ImportFixer()]
 
     def analyze(
@@ -93,7 +96,12 @@ class AnalysisCoordinator:
 
         # Create context
         context = AnalysisContext(
-            files=file_infos, graph=graph, findings=[], config=self.config
+            files=file_infos,
+            graph=graph,
+            findings=[],
+            evidence=[],
+            config=self.config,
+            project_root=project_root,
         )
 
         # Run analyzers
@@ -105,6 +113,8 @@ class AnalysisCoordinator:
             except Exception as e:
                 print(f"Warning: Analyzer {analyzer.name} failed: {e}")
 
+        all_findings = _deduplicate_findings(all_findings)
+        self._initialize_proof_states(all_findings)
         context.findings = all_findings
 
         elapsed = time.time() - start_time
@@ -196,6 +206,7 @@ class AnalysisCoordinator:
                 if option:
                     result = fixer.apply_fix(finding, option, content)
                     if result.success:
+                        finding.proof_state = ProofState.ACCEPTED.value
                         content = result.content
 
             # Store result for this file
@@ -222,9 +233,11 @@ class AnalysisCoordinator:
         for path in paths:
             path = path.resolve()
             if path.is_file():
-                if self._is_included(path, project_root) and not self._is_excluded(
-                    path, project_root
-                ):
+                explicit_excluded = (
+                    self.config.exclude_patterns_from_config
+                    and self._is_excluded(path, project_root)
+                )
+                if self._is_included(path, project_root) and not explicit_excluded:
                     files.append(path)
             elif path.is_dir():
                 for pattern in self.config.include_patterns:
@@ -243,7 +256,7 @@ class AnalysisCoordinator:
         candidates = [path]
         if project_root is not None:
             try:
-                candidates.append(path.relative_to(project_root))
+                candidates = [path.relative_to(project_root)]
             except ValueError:
                 pass
         return any(
@@ -254,14 +267,16 @@ class AnalysisCoordinator:
 
     def _is_excluded(self, path: Path, project_root: Optional[Path]) -> bool:
         """Return whether a file matches configured exclude patterns."""
+        if is_generated_artifact(path):
+            return True
         candidates = [path]
         if project_root is not None:
             try:
-                candidates.append(path.relative_to(project_root))
+                candidates = [path.relative_to(project_root)]
             except ValueError:
                 pass
         return any(
-            candidate.match(pattern)
+            _matches_path_pattern(candidate, pattern)
             for candidate in candidates
             for pattern in self.config.exclude_patterns
         )
@@ -290,12 +305,14 @@ class AnalysisCoordinator:
     def _get_analyzers(self, names: Optional[list[str]] = None) -> list:
         """Get analyzers to run."""
         from ..analyzers.imports import ImportAnalyzer
+        from ..analyzers.lint import LintAnalyzer
         from ..analyzers.residue import ResidueAnalyzer
 
         available = []
         if self.config.check_imports:
             available.append(ImportAnalyzer())
         if self.config.check_lint:
+            available.append(LintAnalyzer())
             available.append(ResidueAnalyzer())
 
         if names:
@@ -312,6 +329,15 @@ class AnalysisCoordinator:
             if fixer.can_handle(finding):
                 return fixer
         return None
+
+    @staticmethod
+    def _initialize_proof_states(findings: list[Finding]) -> None:
+        """Ensure every finding carries an explicit proof lifecycle state."""
+        for finding in findings:
+            if finding.proof_state is None:
+                finding.proof_state = finding.data.get(
+                    "proof_state", ProofState.RAW.value
+                )
 
     def _get_user_choice(
         self,
@@ -348,6 +374,43 @@ class AnalysisCoordinator:
             except EOFError:
                 print("\n  → EOF, skipping rest")
                 return None
+
+
+def _matches_path_pattern(path: Path, pattern: str) -> bool:
+    """Match paths with root-level generated directories handled correctly."""
+    path_text = path.as_posix()
+    pattern_text = pattern.replace("\\", "/")
+    if path.match(pattern_text) or fnmatch.fnmatchcase(path_text, pattern_text):
+        return True
+    stripped = pattern_text
+    while stripped.startswith("**/"):
+        stripped = stripped[3:]
+    head = stripped.split("/", 1)[0]
+    return bool(head) and any(fnmatch.fnmatchcase(part, head) for part in path.parts)
+
+
+def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
+    """Prefer external Ruff unused-import evidence over duplicate local reports."""
+    ruff_unused_locations = {
+        (finding.file.resolve(), finding.location.line)
+        for finding in findings
+        if finding.lint_source == "ruff"
+        and finding.lint_code == "F401"
+        and finding.location is not None
+    }
+    if not ruff_unused_locations:
+        return findings
+
+    deduplicated = []
+    for finding in findings:
+        if (
+            finding.type == "unused_import_file"
+            and finding.location is not None
+            and (finding.file.resolve(), finding.location.line) in ruff_unused_locations
+        ):
+            continue
+        deduplicated.append(finding)
+    return deduplicated
 
 
 class AnalysisResult:

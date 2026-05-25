@@ -9,10 +9,13 @@ Understands import intent to avoid false positives:
 """
 import ast
 import re
+import sys
 from pathlib import Path
+from typing import Any
 
 from .base import Analyzer, AnalyzerCapability
 from ..analysis.context import AnalysisContext, FileInfo
+from ..analysis.evidence import Evidence
 from ..analysis.findings import Finding, Severity, Location
 from ..graph.imports import extract_imports, ImportInfo
 
@@ -86,31 +89,106 @@ def _is_in_function_or_class(content: str, line: int) -> bool:
     return False
 
 
-def _extract_annotation_names(annotation) -> set[str]:
+def _extract_annotation_names(annotation: Any) -> set[str]:
     """Extract all type names from an annotation node."""
     names = set()
     if isinstance(annotation, ast.Name):
         names.add(annotation.id)
+    elif isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        names.update(_extract_annotation_string_names(annotation.value))
     elif isinstance(annotation, ast.Subscript):
         # Optional[Location], List[Location]
-        if isinstance(annotation.value, ast.Name):
-            names.add(annotation.value.id)
-        # Extract from subscript slice
-        if isinstance(annotation.slice, ast.Name):
-            names.add(annotation.slice.id)
-        elif isinstance(annotation.slice, ast.Tuple):
-            for elt in annotation.slice.elts:
-                if isinstance(elt, ast.Name):
-                    names.add(elt.id)
+        names.update(_extract_annotation_names(annotation.value))
+        names.update(_extract_annotation_names(annotation.slice))
+    elif isinstance(annotation, ast.Tuple):
+        for elt in annotation.elts:
+            names.update(_extract_annotation_names(elt))
     elif isinstance(annotation, ast.Attribute):
         # module.Type
         if isinstance(annotation.value, ast.Name):
             names.add(annotation.value.id)
+    elif isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        names.update(_extract_annotation_names(annotation.left))
+        names.update(_extract_annotation_names(annotation.right))
     return names
 
 
+def _extract_annotation_string_names(annotation: str) -> set[str]:
+    """Extract type names from string annotations such as 'Dict[str, int]'."""
+    try:
+        expression = ast.parse(annotation, mode="eval").body
+    except SyntaxError:
+        return set()
+    return _extract_annotation_names(expression)
+
+
+def _collect_type_use_names(ast_tree: ast.AST) -> set[str]:
+    """Collect names that are used in annotation/type positions."""
+    type_names: set[str] = set()
+
+    for node in ast.walk(ast_tree):
+        if isinstance(node, ast.AnnAssign) and node.annotation:
+            type_names.update(_extract_annotation_names(node.annotation))
+        elif isinstance(node, ast.arg) and node.annotation:
+            type_names.update(_extract_annotation_names(node.annotation))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.returns:
+                type_names.update(_extract_annotation_names(node.returns))
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    continue
+            comment = getattr(node, "type_comment", None)
+            if comment:
+                type_names.update(_extract_annotation_string_names(comment))
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.With, ast.AsyncWith)):
+            comment = getattr(node, "type_comment", None)
+            if comment:
+                type_names.update(_extract_annotation_string_names(comment))
+
+    return type_names
+
+
+def _import_binding_evidence(
+    imp: ImportInfo, file_path: Path, checked_name: str, intent: str
+) -> Evidence:
+    """Build normalized evidence for an import binding decision."""
+    return Evidence(
+        kind="ImportBinding",
+        source="ast",
+        file=file_path,
+        location=Location(line=imp.line),
+        subject=checked_name,
+        data={
+            "module": imp.module,
+            "name": imp.name,
+            "alias": imp.alias,
+            "is_from": imp.is_from_import,
+            "intent": intent,
+        },
+    )
+
+
+def _is_reexport_candidate(imp: ImportInfo, file_path: Path) -> bool:
+    """Return whether an import is plausibly a package public API re-export."""
+    if file_path.name == "interfaces.py":
+        return True
+    if file_path.name != "__init__.py":
+        return False
+
+    module_root = imp.module.split(".", 1)[0] if imp.module else ""
+    if module_root in _TYPING_MODULES:
+        return False
+    if module_root in getattr(sys, "stdlib_module_names", set()):
+        return False
+    return True
+
+
 def _detect_import_intent(
-    imp: ImportInfo, content: str, file_path: Path
+    imp: ImportInfo,
+    content: str,
+    file_path: Path,
+    type_use_names: set[str] | None = None,
 ) -> tuple[str, str, bool]:
     """
     Detect import intent and return (intent, reason, is_safe_to_remove).
@@ -133,13 +211,16 @@ def _detect_import_intent(
         if i < len(lines) and _PROTECTION_MARKERS.search(lines[i]):
             return "side_effect", "Protected by comment marker", False
 
-    # Check if in re-export file
-    if filename in _RE_EXPORT_FILES:
+    # Check if in public API re-export file.
+    if filename in _RE_EXPORT_FILES and _is_reexport_candidate(imp, file_path):
         return "re_export", "Public API re-export - do not remove", False
 
-    # Check if typing module
+    # Check if typing module. This is intent only when the imported binding has
+    # a real annotation/type-use edge, not merely because it came from typing.
     if module in _TYPING_MODULES:
-        return "typing", "Type hints import - used in annotations", False
+        name_to_check = imp.alias or imp.name or module
+        if type_use_names and name_to_check in type_use_names:
+            return "typing", "Type hints import - used in annotations", False
 
     # Check if from registration module (side-effect import)
     if module in _REGISTRATION_MODULES:
@@ -211,6 +292,26 @@ class ImportAnalyzer(Analyzer):
                 continue
 
             imports = extract_imports(file_info.content, path)
+            type_use_names = (
+                _collect_type_use_names(file_info.ast_tree)
+                if file_info.ast_tree is not None
+                else set()
+            )
+            for imp in imports:
+                bound_name = imp.alias or imp.name or imp.module.split(".")[0]
+                context.add_evidence(
+                    _import_binding_evidence(imp, path, bound_name, "binding")
+                )
+            for type_name in type_use_names:
+                context.add_evidence(
+                    Evidence(
+                        kind="AnnotationUse",
+                        source=self.name,
+                        file=path,
+                        location=None,
+                        subject=type_name,
+                    )
+                )
 
             # Find duplicates (only module-level)
             duplicates = self._find_duplicates(imports, file_info.content)
@@ -233,13 +334,15 @@ class ImportAnalyzer(Analyzer):
                 if not used_elsewhere and imp.name:
                     # Skip if used in-file (class bases, annotations, etc.)
                     name_to_check = imp.alias or imp.name
+                    if name_to_check in type_use_names:
+                        continue
                     if file_info.ast_tree and self._is_name_used_in_file(
                         file_info.ast_tree, name_to_check
                     ):
                         continue
 
                     intent, reason, _ = _detect_import_intent(
-                        imp, file_info.content, path
+                        imp, file_info.content, path, type_use_names
                     )
 
                     # Skip if intent indicates the import is intentionally used
@@ -326,6 +429,7 @@ class ImportAnalyzer(Analyzer):
 
         # Collect ALL name references including type annotations
         used_names = set()
+        type_use_names = _collect_type_use_names(file_info.ast_tree)
         for node in ast.walk(file_info.ast_tree):
             # Direct usage
             if isinstance(node, ast.Name):
@@ -380,16 +484,16 @@ class ImportAnalyzer(Analyzer):
         for imp in imports:
             name_to_check = imp.alias or imp.name or imp.module.split(".")[0]
 
-            # Skip typing modules - they're always potentially used
-            if name_to_check in _TYPING_MODULES:
-                continue
-
             # Skip __future__ imports - they are compiler directives, not runtime names
             if imp.module == "__future__":
                 continue
 
-            # Skip all imports in __init__.py files - they are re-exports by convention
-            if file_info.path.name == "__init__.py":
+            # Preserve likely package re-exports, but do not let __init__.py
+            # hide unused stdlib or typing imports.
+            if (
+                file_info.path.name == "__init__.py"
+                and _is_reexport_candidate(imp, file_info.path)
+            ):
                 continue
 
             # Check if used
@@ -398,7 +502,7 @@ class ImportAnalyzer(Analyzer):
             if not is_used:
                 # Cognitive detection
                 intent, intent_reason, auto_fix_safe = _detect_import_intent(
-                    imp, file_info.content, file_info.path
+                    imp, file_info.content, file_info.path, type_use_names
                 )
 
                 if intent in ("registration", "re_export", "typing", "side_effect"):
@@ -425,6 +529,11 @@ class ImportAnalyzer(Analyzer):
                         import_name=imp.name,
                         import_module=imp.module,
                         data={
+                            "evidence": [
+                                _import_binding_evidence(
+                                    imp, file_info.path, name_to_check, intent
+                                ).to_dict()
+                            ],
                             "import_info": {
                                 "module": imp.module,
                                 "name": imp.name,

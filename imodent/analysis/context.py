@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from .evidence import Evidence
 from .findings import Location
 
 
@@ -31,7 +32,7 @@ class FileInfo:
 
         if language == "python":
             try:
-                ast_tree = ast.parse(content)
+                ast_tree = ast.parse(content, type_comments=True)
             except SyntaxError:
                 has_errors = True
 
@@ -125,10 +126,32 @@ class AnalysisConfig:
     interactive: bool = False
 
     # Paths
-    include_patterns: list[str] = field(default_factory=lambda: ["**/*.py"])
+    include_patterns: list[str] = field(default_factory=lambda: ["*.py", "**/*.py"])
     exclude_patterns: list[str] = field(
-        default_factory=lambda: ["**/test_*.py", "**/__pycache__/**"]
+        default_factory=lambda: [
+            "**/test_*.py",
+            "test_*.py",
+            "**/__pycache__/**",
+            "__pycache__/**",
+            "**/.pytest_cache/**",
+            ".pytest_cache/**",
+            "**/.ruff_cache/**",
+            ".ruff_cache/**",
+            "**/.mypy_cache/**",
+            ".mypy_cache/**",
+            "**/.venv/**",
+            ".venv/**",
+            "**/venv/**",
+            "venv/**",
+            "**/build/**",
+            "build/**",
+            "**/dist/**",
+            "dist/**",
+            "**/*.egg-info/**",
+            "*.egg-info/**",
+        ]
     )
+    exclude_patterns_from_config: bool = False
 
     # External tools
     use_ruff: bool = True
@@ -142,7 +165,9 @@ class AnalysisContext:
     files: dict[Path, FileInfo] = field(default_factory=dict)
     graph: DependencyGraph = field(default_factory=DependencyGraph)
     findings: list = field(default_factory=list)
+    evidence: list[Evidence] = field(default_factory=list)
     config: AnalysisConfig = field(default_factory=AnalysisConfig)
+    project_root: Path | None = None
 
     def get_file(self, path: Path) -> Optional[FileInfo]:
         """Get file info by path."""
@@ -163,3 +188,7 @@ class AnalysisContext:
     def add_finding(self, finding):
         """Add a finding to the context."""
         self.findings.append(finding)
+
+    def add_evidence(self, evidence: Evidence):
+        """Add a replayable evidence record to the context."""
+        self.evidence.append(evidence)

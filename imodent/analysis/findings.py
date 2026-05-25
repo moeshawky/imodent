@@ -16,6 +16,19 @@ class Severity(Enum):
     HINT = "hint"  # Suggestion - optional improvement
 
 
+class ProofState(Enum):
+    """Evidence state for a finding or proposed action."""
+
+    RAW = "RAW"
+    EXTERNALLY_VERIFIED = "EXTERNALLY_VERIFIED"
+    PROVEN_UNUSED = "PROVEN_UNUSED"
+    PROVEN_SAFE = "PROVEN_SAFE"
+    ACCEPTED = "ACCEPTED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    CONFLICTING_EVIDENCE = "CONFLICTING_EVIDENCE"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
 @dataclass
 class Location:
     """Location in a source file."""
@@ -54,6 +67,9 @@ class Finding:
     # Lint-specific fields
     lint_code: str | None = None
     lint_source: str | None = None
+
+    # Evidence lifecycle
+    proof_state: str | None = None
 
     @classmethod
     def create(
