@@ -62,6 +62,77 @@ def _is_in_try_block(content: str, line: int) -> bool:
     return False
 
 
+def _classify_try_context(content: str, line: int) -> str:
+    """Classify the except handler strength for a try-block import.
+
+    Returns one of:
+      - "optional dependency (ImportError)" — strong evidence of optional dep
+      - "optional dependency (ModuleNotFoundError)" — strong evidence
+      - "broad except Exception" — weak context, import remains reviewable
+      - "try block, unknown handler" — default when handler can't be parsed
+    """
+    lines = content.split("\n")
+    if line < 1 or line > len(lines):
+        return "try block, unknown handler"
+
+    target_indent = len(lines[line - 1]) - len(lines[line - 1].lstrip())
+
+    # Walk forward from the try line to find the except clause
+    for i in range(line - 2, -1, -1):
+        lstripped = lines[i].lstrip()
+        if not lstripped:
+            continue
+        current_indent = len(lines[i]) - len(lstripped)
+        if current_indent <= target_indent:
+            if lstripped.startswith("try:"):
+                # Now walk forward from the try to find the except
+                try_end = _find_try_end(lines, i)
+                return _classify_except_handler(lines, i, try_end, current_indent)
+            if lstripped.startswith(("except", "else:", "finally:")):
+                return "try block, unknown handler"
+    return "try block, unknown handler"
+
+
+def _find_try_end(lines: list[str], try_line: int) -> int:
+    """Find the last line of the try block (before except/else/finally)."""
+    try_indent = len(lines[try_line]) - len(lines[try_line].lstrip())
+    for i in range(try_line + 1, len(lines)):
+        stripped = lines[i].lstrip()
+        if not stripped:
+            continue
+        current_indent = len(lines[i]) - len(stripped)
+        if current_indent <= try_indent:
+            if stripped.startswith(("except", "else:", "finally:")):
+                return i
+            break
+    return len(lines) - 1
+
+
+def _classify_except_handler(
+    lines: list[str], try_line: int, try_end: int, indent: int
+) -> str:
+    """Classify the first except handler in the try block."""
+    for i in range(try_end, len(lines)):
+        stripped = lines[i].lstrip()
+        if not stripped:
+            continue
+        current_indent = len(lines[i]) - len(stripped)
+        if current_indent < indent:
+            break
+        if current_indent == indent:
+            if stripped.startswith("except ImportError"):
+                return "optional dependency (ImportError)"
+            if stripped.startswith("except ModuleNotFoundError"):
+                return "optional dependency (ModuleNotFoundError)"
+            if stripped.startswith("except Exception"):
+                return "broad except Exception"
+            if stripped.startswith("except"):
+                return "try block, specific handler"
+            if stripped.startswith(("else:", "finally:")):
+                break
+    return "try block, no exception handler"
+
+
 def _is_in_function_or_class(content: str, line: int) -> bool:
     """Check if line is inside a function or class definition."""
     lines = content.split("\n")
@@ -226,9 +297,10 @@ def _detect_import_intent(
     if module in _REGISTRATION_MODULES:
         return "side_effect", f"Registration module import from '{module}' - triggers decorators", False
 
-    # Check if in try/except block
+    # Check if in try/except block — context, not exoneration
     if _is_in_try_block(content, imp.line):
-        return "side_effect", "Conditional import in try block - may be for optional dependencies", False
+        try_context = _classify_try_context(content, imp.line)
+        return "try_block", f"Import in try block: {try_context}", False
 
     # Check for registration patterns in file
     if _REGISTRATION_PATTERN.search(content):
@@ -488,14 +560,6 @@ class ImportAnalyzer(Analyzer):
             if imp.module == "__future__":
                 continue
 
-            # Preserve likely package re-exports, but do not let __init__.py
-            # hide unused stdlib or typing imports.
-            if (
-                file_info.path.name == "__init__.py"
-                and _is_reexport_candidate(imp, file_info.path)
-            ):
-                continue
-
             # Check if used
             is_used = name_to_check in used_names or name_to_check in dunder_all_names
 
@@ -505,7 +569,7 @@ class ImportAnalyzer(Analyzer):
                     imp, file_info.content, file_info.path, type_use_names
                 )
 
-                if intent in ("registration", "re_export", "typing", "side_effect"):
+                if intent in ("registration", "re_export", "typing", "side_effect", "try_block"):
                     finding_type = "import_intent"
                     message = (
                         f"Import '{imp.import_statement}' is not directly used, "

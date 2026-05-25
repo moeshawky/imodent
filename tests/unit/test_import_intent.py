@@ -99,7 +99,7 @@ class TestDetectImportIntent:
         assert is_safe is False
 
     def test_try_block_import(self):
-        """Imports in try blocks should be detected as side_effect."""
+        """Imports in try blocks are evidence, not exoneration."""
         content = """try:
     import optional_dep
 except ImportError:
@@ -114,7 +114,8 @@ except ImportError:
             file=Path("some_module.py"),
         )
         intent, reason, is_safe = _detect_import_intent(imp, content, Path("some_module.py"))
-        assert intent == "side_effect"
+        assert intent == "try_block"
+        assert "ImportError" in reason
 
     def test_registration_pattern_in_file(self):
         """Files with @register decorators should flag imports as registration."""

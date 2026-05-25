@@ -141,6 +141,7 @@ def analyze_files(
     dry_run: bool = False,
     check_only: bool = False,
     verbose: bool = False,
+    confidence: bool = False,
 ):
     """Scan project for import issues, lint violations, architectural drift."""
     if not (analyze_imports or analyze_lint or advisory):
@@ -186,6 +187,10 @@ def analyze_files(
                     print(f"   evidence: {', '.join(kinds)}")
         if not verbose and len(bucket) > 10:
             print(f" … +{len(bucket) - 10} more")
+
+    # ── Confidence display ─────────────────────────────────────────────
+    if confidence:
+        _display_confidence_output(result, verbose)
 
     # ── Advisory ──────────────────────────────────────────────────────────
     if advisory:
@@ -248,6 +253,52 @@ def analyze_files(
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+
+def _display_confidence_output(result, verbose: bool = False) -> None:
+    """Print decision-grade output with evidence and confidence."""
+    candidates = getattr(result, "candidates", []) or []
+    if not candidates:
+        print("\nNo decision candidates available.")
+        return
+
+    print()
+    print("=" * 60)
+    print("DECISION CANDIDATES (confidence-weighted)")
+    print("=" * 60)
+
+    for i, c in enumerate(candidates, 1):
+        sk = c.subject_key
+        rel = str(sk.file)
+        location_str = ""
+        if c.location:
+            location_str = f":{c.location.line}"
+
+        print(f"\n[{i}] {c.issue_type.upper()} — {c.confidence_label} confidence ({c.confidence:.2f})")
+        print(f"    path:      {rel}{location_str}")
+        print(f"    subject:   {sk.kind}  module={sk.module}  name={sk.name}  alias={sk.alias}")
+        print(f"    proof:     {c.proof_state}")
+        print(f"    findings:  {', '.join(c.finding_ids) if c.finding_ids else '(none)'}")
+
+        if c.evidence_for:
+            kinds = sorted({e.kind for e in c.evidence_for})
+            print(f"    evidence for:  {', '.join(kinds)}")
+        if c.evidence_against:
+            kinds = sorted({e.kind for e in c.evidence_against})
+            print(f"    evidence against: {', '.join(kinds)}")
+
+        if c.suggested_actions:
+            print(f"    actions:   {' | '.join(a.label for a in c.suggested_actions)}")
+
+        print(f"    destructive: {'ALLOWED' if c.destructive_allowed else 'BLOCKED'}")
+        print(f"    user decision: {'REQUIRED' if c.requires_user_decision else 'not required'}")
+
+        if verbose:
+            for ev in c.evidence_for[:5]:
+                print(f"       + {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})")
+            for ev in c.evidence_against[:5]:
+                print(f"       - {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})")
+
 
 DESCRIPTION = """\
 imodent — code intelligence tool
@@ -401,6 +452,11 @@ def main():
         action="store_true",
         help="show all findings, not just top 10",
     )
+    scan_group.add_argument(
+        "--confidence",
+        action="store_true",
+        help="show decision candidates with evidence and confidence scores",
+    )
 
     args = parser.parse_args()
 
@@ -426,6 +482,7 @@ def main():
             dry_run=args.dry_run,
             check_only=args.check,
             verbose=args.verbose,
+            confidence=args.confidence,
         )
     elif not args.path:
         parser.print_usage()

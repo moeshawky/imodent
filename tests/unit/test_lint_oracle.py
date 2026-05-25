@@ -134,7 +134,8 @@ def test_init_file_f401_is_public_api_review_not_proven_unused(monkeypatch, tmp_
 
 
 def test_lint_oracle_suppresses_package_init_reexport_f401(monkeypatch, tmp_path):
-    """Ruff F401 in __init__.py is suppressed only for package-local re-exports."""
+    """Ruff F401 in __init__.py records evidence; package-local re-export
+    findings carry REVIEW_PUBLIC_API state instead of being hidden."""
     package = tmp_path / "pkg"
     package.mkdir()
     file_path = package / "__init__.py"
@@ -171,5 +172,11 @@ def test_lint_oracle_suppresses_package_init_reexport_f401(monkeypatch, tmp_path
 
     findings = LintAnalyzer().analyze(context)
 
-    assert len(findings) == 1
-    assert findings[0].message.startswith("F401: `pathlib.Path`")
+    # Both findings are recorded (no more pre-ledger suppression).
+    assert len(findings) == 2
+    pathlib_finding = next(f for f in findings if "pathlib" in f.message)
+    pkg_finding = next(f for f in findings if "pkg.public" in f.message)
+    assert pathlib_finding.data["proof_state"] == "REVIEW_PUBLIC_API"
+    assert pkg_finding.data["proof_state"] == "REVIEW_PUBLIC_API"
+    # Evidence context distinguishes the package-local re-export.
+    assert len(pkg_finding.data["evidence"]) == 2  # primary + context

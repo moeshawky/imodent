@@ -12,6 +12,7 @@ from .base import Analyzer, AnalyzerCapability
 from ..analysis.context import AnalysisContext
 from ..analysis.evidence import Evidence
 from ..analysis.findings import Finding, Location, Severity
+from ..analysis.decisions import subject_key_for_lint  # noqa: E402
 
 
 class LintAnalyzer(Analyzer):
@@ -130,8 +131,6 @@ class LintAnalyzer(Analyzer):
         findings = []
         for diagnostic in diagnostics:
             file_path = Path(diagnostic["filename"]).resolve()
-            if _is_package_init_reexport_f401(diagnostic, file_path):
-                continue
             location_data = diagnostic.get("location") or {}
             end_location_data = diagnostic.get("end_location") or {}
             location = Location(
@@ -142,17 +141,45 @@ class LintAnalyzer(Analyzer):
             )
             code = diagnostic.get("code") or "RUF"
             message = diagnostic.get("message") or "Ruff lint diagnostic"
-            proof_state = _proof_state_for_ruff_code(code, file_path)
+            proof_state_raw = _proof_state_for_ruff_code(code, file_path)
 
-            evidence = Evidence(
+            # Build subject key from diagnostic message (for fusion support)
+            sk = _subject_key_from_diagnostic(diagnostic, file_path, code)
+
+            primary_evidence = Evidence(
                 kind="RuffDiagnostic",
                 source="ruff",
                 file=file_path,
                 location=location,
                 subject=code,
                 data=diagnostic,
+                claim=_claim_for_ruff_code(code),
+                polarity="supports",
+                strength=_strength_for_ruff_code(code),
+                subject_key=sk,
             )
-            context.add_evidence(evidence)
+            context.add_evidence(primary_evidence)
+            evidence_entries = [primary_evidence.to_dict()]
+
+            # Package-local __init__.py re-exports: record additional
+            # context evidence instead of suppressing the finding entirely.
+            is_pkg_reexport = _is_package_init_reexport_f401(diagnostic, file_path)
+            if is_pkg_reexport:
+                proof_state_raw = "REVIEW_PUBLIC_API"
+                context_ev = Evidence(
+                    kind="RuffDiagnostic",
+                    source="ruff",
+                    file=file_path,
+                    location=location,
+                    subject=code,
+                    data=diagnostic,
+                    claim="public_api_reexport",
+                    polarity="context",
+                    strength=0.3,
+                    subject_key=sk,
+                )
+                context.add_evidence(context_ev)
+                evidence_entries.append(context_ev.to_dict())
 
             findings.append(
                 Finding.create(
@@ -166,9 +193,12 @@ class LintAnalyzer(Analyzer):
                     lint_code=code,
                     lint_source="ruff",
                     data={
-                        "proof_state": proof_state,
-                        "evidence": [evidence.to_dict()],
+                        "proof_state": proof_state_raw,
+                        "evidence": evidence_entries,
                         "ruff": diagnostic,
+                        "import_info": _import_info_from_diagnostic(
+                            diagnostic, file_path
+                        ),
                     },
                 )
             )
@@ -224,3 +254,58 @@ def _first_backtick_value(message: str) -> str:
     if len(parts) >= 3:
         return parts[1]
     return ""
+
+
+def _subject_key_from_diagnostic(
+    diagnostic: dict, file_path: Path, code: str
+) -> "SubjectKey | None":
+    """Build a SubjectKey from a Ruff diagnostic for fusion support."""
+    if code == "F401":
+        message = diagnostic.get("message") or ""
+        imported = _first_backtick_value(message)
+        module = ".".join(imported.split(".")[:-1]) if "." in imported else None
+        name = imported.split(".")[-1] if imported else None
+        return subject_key_for_lint(file=file_path, code=code, module=module, name=name)
+    return subject_key_for_lint(file=file_path, code=code)
+
+
+def _claim_for_ruff_code(code: str) -> str:
+    if code == "F401":
+        return "unused_import"
+    if code == "F821":
+        return "undefined_name"
+    if code == "F841":
+        return "unused_variable"
+    if code == "F811":
+        return "redefined_name"
+    return "lint_violation"
+
+
+def _strength_for_ruff_code(code: str) -> float:
+    if code in ("F821", "F841"):
+        return 0.90
+    if code == "F401":
+        return 0.85
+    if code == "F811":
+        return 0.80
+    return 0.70
+
+
+def _import_info_from_diagnostic(
+    diagnostic: dict, file_path: Path
+) -> dict:
+    """Extract import_info from diagnostic message for fusion with local analyzer."""
+    code = diagnostic.get("code")
+    if code != "F401":
+        return {}
+    message = diagnostic.get("message") or ""
+    imported = _first_backtick_value(message)
+    module = ".".join(imported.split(".")[:-1]) if "." in imported else None
+    name = imported.split(".")[-1] if imported else None
+    return {
+        "module": module,
+        "name": name,
+        "alias": None,
+        "source": "ruff",
+        "raw_message": message,
+    }

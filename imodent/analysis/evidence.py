@@ -7,11 +7,21 @@ decision layer can combine those facts into a proof state.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from .findings import Location
+
+if TYPE_CHECKING:
+    from .decisions import SubjectKey
+
+_EVIDENCE_ID_COUNTER = itertools.count(1)
+
+
+def _next_evidence_id() -> int:
+    return next(_EVIDENCE_ID_COUNTER)
 
 
 @dataclass(frozen=True)
@@ -24,27 +34,27 @@ class Evidence:
     location: Location | None
     subject: str
     data: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-friendly representation for finding metadata."""
-        return {
-            "kind": self.kind,
-            "source": self.source,
-            "file": str(self.file),
-            "location": str(self.location) if self.location else None,
-            "subject": self.subject,
-            "data": self.data,
-        }
+    polarity: str = "context"
+    claim: str = ""
+    strength: float = 0.5
+    subject_key: SubjectKey | None = None
+    id: int = field(default_factory=_next_evidence_id)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
         payload: dict[str, Any] = {
+            "id": self.id,
             "kind": self.kind,
             "source": self.source,
             "file": str(self.file),
             "subject": self.subject,
+            "polarity": self.polarity,
+            "claim": self.claim,
+            "strength": self.strength,
             "data": self.data,
         }
+        if self.subject_key is not None:
+            payload["subject_key"] = self.subject_key.to_dict()
         if self.location is not None:
             payload["location"] = {
                 "line": self.location.line,

@@ -10,6 +10,7 @@ import time
 
 from .context import AnalysisContext, AnalysisConfig, FileInfo
 from .findings import Finding, FixOption, ProofState
+from .decisions import DecisionEngine, subject_key_for_import, subject_key_for_lint
 from ..graph.dependency import build_dependency_graph
 from ..interfaces import FixResult
 from ..project.discovery import is_generated_artifact
@@ -117,12 +118,17 @@ class AnalysisCoordinator:
         self._initialize_proof_states(all_findings)
         context.findings = all_findings
 
+        # Build decision candidates from findings and evidence
+        engine = DecisionEngine()
+        candidates = engine.build_candidates(all_findings, context.evidence)
+
         elapsed = time.time() - start_time
 
         return AnalysisResult(
             context=context,
             elapsed_time=elapsed,
             analyzer_names=[a.name for a in self._get_analyzers(analyzers)],
+            candidates=candidates,
         )
 
     def fix(
@@ -390,38 +396,103 @@ def _matches_path_pattern(path: Path, pattern: str) -> bool:
 
 
 def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
-    """Prefer external Ruff unused-import evidence over duplicate local reports."""
-    ruff_unused_locations = {
-        (finding.file.resolve(), finding.location.line)
-        for finding in findings
-        if finding.lint_source == "ruff"
-        and finding.lint_code == "F401"
-        and finding.location is not None
-    }
-    if not ruff_unused_locations:
+    """Prefer external Ruff evidence over duplicate local reports by subject key.
+
+    Fuses Ruff F401 and local unused-import findings that share the same
+    semantic subject key (module, name, alias), NOT merely (file, line).
+    Grouped imports and multiline imports each have their own subject key
+    and are preserved as separate subjects.
+    """
+    # Build a set of subject keys covered by Ruff F401 evidence
+    ruff_subject_keys: dict[tuple, Finding] = {}
+    for finding in findings:
+        if finding.lint_source == "ruff" and finding.lint_code == "F401":
+            sk = _subject_key_from_finding(finding)
+            if sk is not None:
+                key = sk.binding_key
+                if key not in ruff_subject_keys:
+                    ruff_subject_keys[key] = finding
+
+    if not ruff_subject_keys:
         return findings
 
-    deduplicated = []
+    deduplicated: list[Finding] = []
     for finding in findings:
-        if (
-            finding.type == "unused_import_file"
-            and finding.location is not None
-            and (finding.file.resolve(), finding.location.line) in ruff_unused_locations
-        ):
-            continue
+        if finding.type == "unused_import_file" and finding.lint_source != "ruff":
+            sk = _subject_key_from_finding(finding)
+            if sk is not None and sk.binding_key in ruff_subject_keys:
+                # Ruff already covers this subject; skip the local duplicate
+                continue
         deduplicated.append(finding)
     return deduplicated
+
+
+def _subject_key_from_finding(finding) -> "SubjectKey | None":
+    """Extract a SubjectKey from a Finding for deduplication.
+
+    For Ruff F401 diagnostics we use an import-style key so that they
+    match the local unused-import findings by semantic subject.
+    """
+    from .decisions import subject_key_for_import, subject_key_for_lint
+
+    file = getattr(finding, "file", Path("."))
+    lint_code = getattr(finding, "lint_code", None)
+    lint_source = getattr(finding, "lint_source", None)
+    import_module = getattr(finding, "import_module", None)
+    import_name = getattr(finding, "import_name", None)
+    data = getattr(finding, "data", {}) or {}
+    import_info = data.get("import_info") or {}
+
+    if lint_source == "ruff" and lint_code == "F401":
+        module = import_info.get("module") or import_module
+        name = import_info.get("name") or import_name
+        # Normalize to import-style key so Ruff F401 and local
+        # unused-import findings share the same binding key.
+        return subject_key_for_import(
+            file=file,
+            module=module,
+            name=name,
+            alias=None,
+        )
+
+    if lint_source == "ruff" and lint_code:
+        module = import_info.get("module") or import_module
+        name = import_info.get("name") or import_name
+        return subject_key_for_lint(
+            file=file,
+            code=lint_code,
+            module=module,
+            name=name,
+        )
+
+    if finding.type in ("unused_import", "unused_import_file", "import_intent"):
+        module = import_info.get("module") or import_module
+        name = import_info.get("name") or import_name
+        alias = import_info.get("alias")
+        return subject_key_for_import(
+            file=file,
+            module=module,
+            name=name,
+            alias=alias,
+        )
+
+    return None
 
 
 class AnalysisResult:
     """Result of an analysis run."""
 
     def __init__(
-        self, context: AnalysisContext, elapsed_time: float, analyzer_names: list[str]
+        self,
+        context: AnalysisContext,
+        elapsed_time: float,
+        analyzer_names: list[str],
+        candidates: list | None = None,
     ):
         self.context = context
         self.elapsed_time = elapsed_time
         self.analyzer_names = analyzer_names
+        self.candidates = candidates or []
 
     @property
     def files(self) -> dict[Path, FileInfo]:

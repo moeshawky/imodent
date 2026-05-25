@@ -3,6 +3,14 @@
 from .context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph
 from .findings import Finding, Severity, Location, FixOption, Advice, Change
 from .coordinator import AnalysisCoordinator, AnalysisResult, FixMode
+from .decisions import (
+    SubjectKey,
+    DecisionCandidate,
+    ActionOption,
+    DecisionEngine,
+    subject_key_for_import,
+    subject_key_for_lint,
+)
 
 __all__ = [
     "AnalysisContext",
@@ -18,4 +26,10 @@ __all__ = [
     "AnalysisCoordinator",
     "AnalysisResult",
     "FixMode",
+    "SubjectKey",
+    "DecisionCandidate",
+    "ActionOption",
+    "DecisionEngine",
+    "subject_key_for_import",
+    "subject_key_for_lint",
 ]
