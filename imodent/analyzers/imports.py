@@ -10,7 +10,6 @@ Understands import intent to avoid false positives:
 import ast
 import re
 from pathlib import Path
-from typing import Optional
 
 from .base import Analyzer, AnalyzerCapability
 from ..analysis.context import AnalysisContext, FileInfo
@@ -27,7 +26,7 @@ _TYPING_MODULES = {"typing", "abc", "dataclasses", "collections.abc"}
 # Known registration modules - imports from these are side-effect imports
 _REGISTRATION_MODULES = {
     "strategies",
-    "analyzers", 
+    "analyzers",
     "fixers",
     "registry",
 }
@@ -75,10 +74,15 @@ def _is_in_function_or_class(content: str, line: int) -> bool:
         if not lstripped:
             continue
         current_indent = len(lines[i]) - len(lstripped)
-        if current_indent < target_indent:
+        if current_indent <= target_indent:
             if lstripped.startswith(("def ", "class ", "async def ")):
                 return True
-            return False
+            if current_indent == 0:
+                # Check if this is a continuation of a multi-line def/class
+                if lstripped.startswith((")", ",", "]", "}", "as ", "except", "finally:")):
+                    continue
+                return False
+            target_indent = current_indent
     return False
 
 
@@ -110,7 +114,7 @@ def _detect_import_intent(
 ) -> tuple[str, str, bool]:
     """
     Detect import intent and return (intent, reason, is_safe_to_remove).
-    
+
     Returns:
         intent: Category of import (registration, re_export, typing, side_effect, usage)
         reason: Human-readable explanation
@@ -119,33 +123,52 @@ def _detect_import_intent(
     module = imp.module.split(".")[0] if imp.module else ""
     filename = file_path.name
     lines = content.split("\n")
-    
+
+    # __future__ imports are compiler directives, not runtime names
+    if imp.module == "__future__":
+        return "side_effect", "__future__ compiler directive - not a runtime name", False
+
     # Check for protection markers in comments
     for i in range(max(0, imp.line - 3), min(len(lines), imp.line + 1)):
         if i < len(lines) and _PROTECTION_MARKERS.search(lines[i]):
             return "side_effect", "Protected by comment marker", False
-    
+
     # Check if in re-export file
     if filename in _RE_EXPORT_FILES:
         return "re_export", "Public API re-export - do not remove", False
-    
+
     # Check if typing module
     if module in _TYPING_MODULES:
         return "typing", "Type hints import - used in annotations", False
-    
+
     # Check if from registration module (side-effect import)
     if module in _REGISTRATION_MODULES:
         return "side_effect", f"Registration module import from '{module}' - triggers decorators", False
-    
+
     # Check if in try/except block
     if _is_in_try_block(content, imp.line):
         return "side_effect", "Conditional import in try block - may be for optional dependencies", False
-    
+
     # Check for registration patterns in file
     if _REGISTRATION_PATTERN.search(content):
         return "registration", "File has registration decorators - imports may trigger them", False
-    
+
     return "usage", "Normal import - appears unused", False
+
+
+def _is_single_alias_import_statement(content: str, line: int) -> bool:
+    """Return True only when a line contains a one-alias import statement."""
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and node.lineno == line:
+            if getattr(node, "end_lineno", node.lineno) != node.lineno:
+                return False
+            return len(node.names) == 1
+    return False
 
 
 def _has_type_annotations(ast_tree) -> bool:
@@ -202,12 +225,27 @@ class ImportAnalyzer(Analyzer):
                 if self._is_local_import(imp, context):
                     continue
 
+                # Skip __future__ imports - compiler directives, not runtime names
+                if imp.module == "__future__":
+                    continue
+
                 used_elsewhere = self._check_project_usage(imp, context)
                 if not used_elsewhere and imp.name:
+                    # Skip if used in-file (class bases, annotations, etc.)
+                    name_to_check = imp.alias or imp.name
+                    if file_info.ast_tree and self._is_name_used_in_file(
+                        file_info.ast_tree, name_to_check
+                    ):
+                        continue
+
                     intent, reason, _ = _detect_import_intent(
                         imp, file_info.content, path
                     )
-                    
+
+                    # Skip if intent indicates the import is intentionally used
+                    if intent != "usage":
+                        continue
+
                     finding = Finding.create(
                         type="unused_import",
                         severity=Severity.INFO,
@@ -264,7 +302,9 @@ class ImportAnalyzer(Analyzer):
                         message=f"Duplicate import '{imp.import_statement}' (first at line {first_imp.line})",
                         location=Location(line=imp.line),
                         fixable=True,
-                        auto_fix_safe=True,
+                        auto_fix_safe=_is_single_alias_import_statement(
+                            source_content, imp.line
+                        ),
                         import_name=imp.name,
                         import_module=imp.module,
                         data={"first_occurrence": first_imp.line},
@@ -283,9 +323,6 @@ class ImportAnalyzer(Analyzer):
 
         if not file_info.ast_tree:
             return findings
-
-        # Check if file has type annotations
-        has_annotations = _has_type_annotations(file_info.ast_tree)
 
         # Collect ALL name references including type annotations
         used_names = set()
@@ -347,6 +384,14 @@ class ImportAnalyzer(Analyzer):
             if name_to_check in _TYPING_MODULES:
                 continue
 
+            # Skip __future__ imports - they are compiler directives, not runtime names
+            if imp.module == "__future__":
+                continue
+
+            # Skip all imports in __init__.py files - they are re-exports by convention
+            if file_info.path.name == "__init__.py":
+                continue
+
             # Check if used
             is_used = name_to_check in used_names or name_to_check in dunder_all_names
 
@@ -356,20 +401,26 @@ class ImportAnalyzer(Analyzer):
                     imp, file_info.content, file_info.path
                 )
 
-                # Better message based on intent
                 if intent in ("registration", "re_export", "typing", "side_effect"):
-                    message = f"Import '{imp.import_statement}' not directly used: {intent_reason}"
+                    finding_type = "import_intent"
+                    message = (
+                        f"Import '{imp.import_statement}' is not directly used, "
+                        f"but carries intent: {intent_reason}"
+                    )
+                    fixable = False
                 else:
+                    finding_type = "unused_import_file"
                     message = f"Import '{imp.import_statement}' is not used in this file"
+                    fixable = True
 
                 findings.append(
                     Finding.create(
-                        type="unused_import_file",
+                        type=finding_type,
                         severity=Severity.INFO,
                         file=file_info.path,
                         message=message,
                         location=Location(line=imp.line),
-                        fixable=True,
+                        fixable=fixable,
                         auto_fix_safe=auto_fix_safe,
                         import_name=imp.name,
                         import_module=imp.module,
@@ -403,3 +454,18 @@ class ImportAnalyzer(Analyzer):
             return False
         module = imp.module
         return len(context.graph.get_importers(module)) > 1
+
+    @staticmethod
+    def _is_name_used_in_file(ast_tree, name: str) -> bool:
+        """Check if a name is referenced in the AST (excluding import nodes)."""
+        for node in ast.walk(ast_tree):
+            if isinstance(node, ast.Name) and node.id == name:
+                return True
+            if isinstance(node, ast.Attribute):
+                if isinstance(node.value, ast.Name) and node.value.id == name:
+                    return True
+            if isinstance(node, ast.ClassDef):
+                for base in node.bases:
+                    if isinstance(base, ast.Name) and base.id == name:
+                        return True
+        return False

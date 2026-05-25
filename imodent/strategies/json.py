@@ -42,10 +42,10 @@ class JSONStrategy(LanguageStrategy):
             return False
         # Reject JSONL: multiple lines each starting with { or [
         # JSONL has one JSON object per line, JSON has one for the whole file
-        non_empty = [l.strip() for l in stripped.splitlines() if l.strip()]
+        non_empty = [line.strip() for line in stripped.splitlines() if line.strip()]
         if len(non_empty) > 1:
             jsonish_lines = sum(
-                1 for l in non_empty if l.startswith("{") or l.startswith("[")
+                1 for line in non_empty if line.startswith("{") or line.startswith("[")
             )
             # If most lines start with { or [, it's JSONL not JSON
             if jsonish_lines > 1 and jsonish_lines >= len(non_empty) * 0.5:

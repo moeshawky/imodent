@@ -1,8 +1,10 @@
 """Import fixer - handles unused/duplicate imports with options."""
 
+import ast
+
 from .base import Fixer
 from ..analysis.context import AnalysisContext
-from ..analysis.findings import Finding, FixOption, Location
+from ..analysis.findings import Finding, FixOption
 from ..interfaces import FixResult
 
 
@@ -46,18 +48,18 @@ class ImportFixer(Fixer):
 
         elif finding.type in ("unused_import", "unused_import_file"):
             import_info = finding.data.get("import_info", {})
-            module = import_info.get("module", finding.import_module or "")
             name = import_info.get("name", finding.import_name or "")
 
-            # Option 1: Delete (safest recommendation)
+            # Option 1: Investigate/wire. In LLM-authored codebases, an unused
+            # import is often evidence of unfinished intent, not trash.
             options.append(
                 FixOption(
-                    id="delete",
-                    label="Remove import",
-                    description=f"Remove unused import",
-                    action="delete",
+                    id="investigate",
+                    label="Investigate usage",
+                    description="Search codebase and wire the intended usage before deleting",
+                    action="investigate",
                     is_safe=True,
-                    preview=self._preview_remove_import(finding),
+                    requires_input=False,
                 )
             )
 
@@ -86,20 +88,7 @@ class ImportFixer(Fixer):
                 )
             )
 
-            # Option 4: Investigate (if we need more info)
-            if finding.usage_count == 0:
-                options.append(
-                    FixOption(
-                        id="investigate",
-                        label="Investigate usage",
-                        description="Search codebase for potential usage before deciding",
-                        action="investigate",
-                        is_safe=True,
-                        requires_input=False,
-                    )
-                )
-
-            # Option 5: False positive
+            # Option 4: False positive
             options.append(
                 FixOption(
                     id="false_positive",
@@ -108,6 +97,18 @@ class ImportFixer(Fixer):
                     action="use",
                     is_safe=True,
                     requires_input=True,  # User provides where it's used
+                )
+            )
+
+            # Option 5: Delete, terminal action only after intent review
+            options.append(
+                FixOption(
+                    id="delete",
+                    label="Remove import",
+                    description="Remove only after no wiring, export, registration, or typing intent remains",
+                    action="delete",
+                    is_safe=False,
+                    preview=self._preview_remove_import(finding),
                 )
             )
 
@@ -191,7 +192,17 @@ class ImportFixer(Fixer):
                 fixed_valid=True,
             )
 
-        old_line = lines[line_idx]
+        if not _can_remove_whole_import_line(content, location.line):
+            return FixResult(
+                success=False,
+                content=content,
+                errors=[
+                    "Import shares a statement with other names; alias-level rewrite required"
+                ],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
+            )
 
         # Remove the line
         new_lines = lines[:line_idx] + lines[line_idx + 1 :]
@@ -204,6 +215,18 @@ class ImportFixer(Fixer):
         if content.endswith("\n"):
             new_content += "\n"
 
+        try:
+            ast.parse(new_content)
+        except SyntaxError as e:
+            return FixResult(
+                success=False,
+                content=content,
+                errors=[f"Import removal would make Python invalid: {e}"],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=False,
+            )
+
         return FixResult(
             success=True,
             content=new_content,
@@ -212,3 +235,18 @@ class ImportFixer(Fixer):
             original_valid=True,
             fixed_valid=True,
         )
+
+
+def _can_remove_whole_import_line(content: str, line: int) -> bool:
+    """Whole-line deletion is safe only for one-line, one-alias imports."""
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and node.lineno == line:
+            if getattr(node, "end_lineno", node.lineno) != node.lineno:
+                return False
+            return len(node.names) == 1
+    return False

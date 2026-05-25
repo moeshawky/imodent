@@ -6,7 +6,7 @@ These define the contracts that all language strategies and processors must impl
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Literal
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -113,6 +113,6 @@ class Processor(ABC):
 
 
 # Re-export analysis types for convenience
-from .analysis.findings import Finding, Severity, Location, FixOption, Advice, Change
-from .analysis.context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph
-from .analysis.coordinator import AnalysisCoordinator, AnalysisResult, FixMode
+from .analysis.findings import Finding, Severity, Location, FixOption, Advice, Change  # noqa: E402, F401
+from .analysis.context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph  # noqa: E402, F401
+from .analysis.coordinator import AnalysisCoordinator, AnalysisResult, FixMode  # noqa: E402, F401

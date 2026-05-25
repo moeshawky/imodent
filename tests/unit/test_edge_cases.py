@@ -206,8 +206,8 @@ class TestImportFixerEdgeCases:
         result = fixer.apply_fix(finding, options[0], content)
         assert not result.success
 
-    def test_unused_import_has_delete_option(self):
-        """Unused import finding always has 'delete' as first option."""
+    def test_unused_import_investigates_before_delete(self):
+        """Unused import findings prefer investigation before terminal deletion."""
         fixer = ImportFixer()
         finding = Finding.create(
             type="unused_import",
@@ -219,7 +219,9 @@ class TestImportFixerEdgeCases:
         )
         options = fixer.get_options(finding, AnalysisContext())
         assert len(options) >= 1
-        assert options[0].id == "delete"
+        assert options[0].id == "investigate"
+        assert options[-1].id == "delete"
+        assert options[-1].is_safe is False
 
     def test_unused_import_has_keep_option(self):
         """Unused import finding has 'keep' option for type hints."""

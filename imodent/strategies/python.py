@@ -7,10 +7,56 @@ Handles Python indentation fixing using AST-based validation.
 import ast
 import re
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
 
 from ..interfaces import LanguageStrategy, FixResult
 from ..registry import StrategyRegistry
+
+
+def _ends_with_block_colon(line: str) -> bool:
+    """Check if line ends with a colon that starts a block, ignoring colons in strings."""
+    stripped = line.rstrip()
+    if not stripped.endswith(":"):
+        return False
+    result = []
+    in_string = False
+    string_char = None
+    i = 0
+    while i < len(stripped):
+        c = stripped[i]
+        if not in_string and i + 2 < len(stripped) and stripped[i:i+3] in ('"""', "'''"):
+            quote = stripped[i:i+3]
+            end = stripped.find(quote, i + 3)
+            if end == -1:
+                break
+            i = end + 3
+            continue
+        if not in_string and c == '"':
+            in_string = True
+            string_char = '"'
+            i += 1
+            continue
+        if not in_string and c == "'":
+            in_string = True
+            string_char = "'"
+            i += 1
+            continue
+        if in_string and c == string_char:
+            in_string = False
+            string_char = None
+            i += 1
+            continue
+        if not in_string:
+            result.append(c)
+        i += 1
+    cleaned = "".join(result).rstrip()
+    if not cleaned.endswith(":"):
+        return False
+    # Reject colons inside dict/list literals (unclosed { or [)
+    open_braces = cleaned.count("{") - cleaned.count("}")
+    open_brackets = cleaned.count("[") - cleaned.count("]")
+    if open_braces > 0 or open_brackets > 0:
+        return False
+    return True
 
 
 class ASTStructureVisitor:
@@ -163,10 +209,10 @@ class PythonStrategy(LanguageStrategy):
                         success=False,
                         content=content,
                         errors=[
-                            f"File has structural syntax error — cannot auto-fix.",
+                            "File has structural syntax error — cannot auto-fix.",
                             f"  {original_error}",
-                            f"  Fix the syntax error first, then rerun imodent.",
-                            f"  Use --force to attempt heuristic fix anyway.",
+                            "  Fix the syntax error first, then rerun imodent.",
+                            "  Use --force to attempt heuristic fix anyway.",
                         ],
                         warnings=warnings,
                         original_valid=original_valid,
@@ -285,7 +331,7 @@ class PythonStrategy(LanguageStrategy):
             fixed_lines.append(" " * new_indent + stripped)
             last_block_line = lineno
 
-            if stripped.rstrip().endswith(":"):
+            if _ends_with_block_colon(stripped):
                 level_stack.append(level + 1)
 
             open_count = stripped.count("(") + stripped.count("[") + stripped.count("{")

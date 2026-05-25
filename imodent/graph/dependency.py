@@ -1,9 +1,8 @@
 """Dependency graph builder for multi-file analysis."""
 
+import ast
 from pathlib import Path
 from typing import Optional
-from collections import defaultdict
-
 from ..analysis.context import DependencyGraph, FileInfo
 from .imports import extract_imports, resolve_module_name, ImportInfo
 
@@ -194,6 +193,3 @@ def _get_context(content: str, line: int, context_lines: int = 2) -> str:
     start = max(0, line - context_lines - 1)
     end = min(len(lines), line + context_lines)
     return "\n".join(lines[start:end])
-
-
-import ast  # Need this for trace_symbol_usage

@@ -7,16 +7,14 @@ SCAN — multi-file analysis: imports, lint, architecture (--analyze)
 
 import argparse
 import shutil
-import sys
 from pathlib import Path
 
 # Registration side-effects (do not remove)
-from .strategies import PythonStrategy, JSONStrategy, JSONLStrategy, YAMLStrategy
-from .interfaces import FixResult
 from .pipeline import FixPipeline
 from .registry import StrategyRegistry
 from .analysis.coordinator import AnalysisCoordinator, FixMode
 from .analysis.findings import Severity
+from .project.project_context import ProjectContext
 
 
 # ---------------------------------------------------------------------------
@@ -31,21 +29,25 @@ def fix_file(
     dry_run: bool = False,
     check_only: bool = False,
     force: bool = False,
+    recursive: bool = False,
 ):
     """Reformat one file or directory tree."""
     pipeline = FixPipeline(indent_size=indent_size)
-    targets = _collect_targets(file_path)
+    targets = _collect_targets(file_path, recursive=recursive)
     for target in targets:
         _process_file(pipeline, target, backup, dry_run, check_only, force)
 
 
-def _collect_targets(file_path: Path) -> list[Path]:
+def _collect_targets(file_path: Path, recursive: bool = False) -> list[Path]:
     """Expand file/directory to list of processable files."""
     handled = {".py", ".pyw", ".pyi", ".json", ".jsonl", ".ndjson", ".yaml", ".yml"}
     if file_path.is_file():
-        return [file_path]
+        return [file_path.resolve()]
+    pattern = "**/*" if recursive else "*"
     return sorted(
-        f for f in file_path.glob("**/*") if f.is_file() and f.suffix.lower() in handled
+        f.resolve()
+        for f in file_path.glob(pattern)
+        if f.is_file() and f.suffix.lower() in handled
     )
 
 
@@ -57,7 +59,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         print(f"✗ {file_path}: {e}")
         return
 
-    result = pipeline.fix(content, force=force)
+    result = pipeline.fix(content, strategy=_strategy_for_path(file_path), force=force)
 
     if check_only:
         print(f"{'✓' if result.success else '✗'} {file_path}")
@@ -68,6 +70,14 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
     if dry_run:
         print(f"\n--- {file_path} ---")
         print(result.content, end="")
+        for w in result.warnings:
+            print(f" ⚠ {w}")
+        return
+
+    if not result.success:
+        print(f"✗ {file_path}")
+        for err in result.errors:
+            print(f" → {err}")
         for w in result.warnings:
             print(f" ⚠ {w}")
         return
@@ -94,6 +104,23 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         print(f" ⚠ {w}")
 
 
+def _strategy_for_path(file_path: Path):
+    """Prefer extension-specific strategy when a known file suffix is present."""
+    by_suffix = {
+        ".py": "python",
+        ".pyw": "python",
+        ".pyi": "python",
+        ".json": "json",
+        ".jsonl": "jsonl",
+        ".ndjson": "jsonl",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+    }
+    name = by_suffix.get(file_path.suffix.lower())
+    strategy = StrategyRegistry.get(name) if name else None
+    return strategy() if strategy else None
+
+
 # ---------------------------------------------------------------------------
 # Mode 2: SCAN — multi-file analysis
 # ---------------------------------------------------------------------------
@@ -113,13 +140,22 @@ def analyze_files(
     verbose: bool = False,
 ):
     """Scan project for import issues, lint violations, architectural drift."""
-    files = _expand_paths(paths)
-    if not files:
+    if not (analyze_imports or analyze_lint or advisory):
+        analyze_imports = True
+
+    if not paths:
         print("No matching files found.")
         return
 
-    coordinator = AnalysisCoordinator()
-    result = coordinator.analyze(files)
+    resolved_paths = [path.resolve() for path in paths]
+    project_context = ProjectContext.discover(resolved_paths[0])
+    project_context.config.check_imports = analyze_imports
+    project_context.config.check_lint = analyze_lint
+    coordinator = AnalysisCoordinator(project_context=project_context)
+    result = coordinator.analyze(resolved_paths)
+    if not result.context.files:
+        print("No matching files found.")
+        return
 
     # ── Summary ──────────────────────────────────────────────────────────
     print(result.summary())
@@ -135,10 +171,11 @@ def analyze_files(
             continue
         label = severity.value.upper()
         print(f"\n{label} ({len(bucket)}):")
-        for f in bucket[:10]:
+        shown = bucket if verbose else bucket[:10]
+        for f in shown:
             loc = f":{f.location.line}" if f.location else ""
             print(f" {f.file.name}{loc}: {f.message}")
-        if len(bucket) > 10:
+        if not verbose and len(bucket) > 10:
             print(f" … +{len(bucket) - 10} more")
 
     # ── Advisory ──────────────────────────────────────────────────────────
@@ -199,19 +236,6 @@ def analyze_files(
                 print(f" ✓ {file_path}")
 
 
-def _expand_paths(paths: list[Path]) -> list[Path]:
-    """Expand file/directory list to concrete file list."""
-    handled = {".py", ".pyw", ".pyi", ".json", ".jsonl", ".ndjson", ".yaml", ".yml"}
-    files = set()
-    for p in paths:
-        if p.is_file():
-            files.add(p)
-        elif p.is_dir():
-            for ext in handled:
-                files.update(p.glob(f"**/*{ext}"))
-    return sorted(files)
-
-
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -270,11 +294,18 @@ def main():
         epilog=EPILOG,
     )
 
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="imodent 1.0.0",
+        help="show version and exit",
+    )
+
     # ── Positional ──────────────────────────────────────────────────────
     parser.add_argument(
         "path",
         type=Path,
-        nargs="+",
+        nargs="*",
         help="file or directory to process",
     )
 
@@ -365,9 +396,17 @@ def main():
     args = parser.parse_args()
 
     # ── Route to mode ────────────────────────────────────────────────────
-    if args.analyze or args.imports or args.lint or args.advisory:
+    if (
+        args.analyze
+        or args.imports
+        or args.lint
+        or args.advisory
+        or args.report
+        or args.interactive
+        or args.fix
+    ):
         analyze_files(
-            paths=args.path,
+            paths=args.path or [],
             analyze_imports=args.imports,
             analyze_lint=args.lint,
             advisory=args.advisory,
@@ -379,6 +418,8 @@ def main():
             check_only=args.check,
             verbose=args.verbose,
         )
+    elif not args.path:
+        parser.print_usage()
     else:
         for path in args.path:
             fix_file(
@@ -388,6 +429,7 @@ def main():
                 dry_run=args.dry_run,
                 check_only=args.check,
                 force=args.force,
+                recursive=args.recursive,
             )
 
 

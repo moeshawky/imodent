@@ -4,7 +4,7 @@ Processing Pipeline for Indentation Fixing.
 Orchestrates the detection, fixing, and validation steps.
 """
 
-from typing import Optional, List
+from typing import Optional
 from .interfaces import LanguageStrategy, FixResult
 from .registry import StrategyRegistry
 

@@ -1,0 +1,217 @@
+"""Tests for CLI main function and argument routing."""
+import pytest
+import sys
+from io import StringIO
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+from imodent.cli import main, fix_file, analyze_files, _collect_targets
+from imodent.analysis.coordinator import AnalysisCoordinator
+from imodent.project.project_context import ProjectContext
+
+
+class TestCLIRouting:
+    """Test that CLI arguments route to the correct mode."""
+
+    def test_fix_mode_default(self, tmp_path):
+        """Without --analyze, should route to fix mode."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("x=1\n")
+
+        with patch("imodent.cli.fix_file") as mock_fix:
+            with patch.object(sys, "argv", ["imodent", str(test_file)]):
+                main()
+            mock_fix.assert_called_once()
+
+    def test_analyze_mode_with_imports(self, tmp_path):
+        """With --analyze --imports, should route to analyze mode."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\n")
+
+        with patch("imodent.cli.analyze_files") as mock_analyze:
+            with patch.object(sys, "argv", ["imodent", str(test_file), "--analyze", "--imports"]):
+                main()
+            mock_analyze.assert_called_once()
+
+    def test_analyze_mode_with_advisory(self, tmp_path):
+        """With --analyze --advisory, should route to analyze mode."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\nimport sys\n")
+
+        with patch("imodent.cli.analyze_files") as mock_analyze:
+            with patch.object(sys, "argv", ["imodent", str(test_file), "--analyze", "--advisory"]):
+                main()
+            mock_analyze.assert_called_once()
+
+    def test_analyze_mode_with_lint(self, tmp_path):
+        """With --analyze --lint, should route to analyze mode."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("x=1\n")
+
+        with patch("imodent.cli.analyze_files") as mock_analyze:
+            with patch.object(sys, "argv", ["imodent", str(test_file), "--analyze", "--lint"]):
+                main()
+            mock_analyze.assert_called_once()
+
+    def test_report_without_analyze_routes_to_scan_mode(self, tmp_path):
+        """--report alone should never fall through to writing fix mode."""
+        test_file = tmp_path / "test.py"
+        original = "def foo():\n  pass\n"
+        test_file.write_text(original)
+
+        with patch.object(sys, "argv", ["imodent", str(test_file), "--report"]):
+            main()
+
+        assert test_file.read_text() == original
+
+    def test_multiple_paths(self, tmp_path):
+        """Multiple paths should be passed to the handler."""
+        file1 = tmp_path / "a.py"
+        file2 = tmp_path / "b.py"
+        file1.write_text("x=1\n")
+        file2.write_text("y=2\n")
+
+        with patch("imodent.cli.fix_file") as mock_fix:
+            with patch.object(sys, "argv", ["imodent", str(file1), str(file2)]):
+                main()
+            assert mock_fix.call_count == 2
+
+
+class TestFixFile:
+    """Test the fix_file function."""
+
+    def test_fix_single_file(self, tmp_path):
+        """Should fix a single file."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("def foo():\n  pass\n")
+
+        fix_file(test_file, indent_size=4, backup=False, dry_run=True)
+        # Should not raise
+
+    def test_fix_directory(self, tmp_path):
+        """Should fix all files in a directory."""
+        file1 = tmp_path / "a.py"
+        file2 = tmp_path / "b.py"
+        file1.write_text("def foo():\n  pass\n")
+        file2.write_text("def bar():\n  pass\n")
+
+        fix_file(tmp_path, indent_size=4, backup=False, dry_run=True)
+        # Should not raise
+
+    def test_fix_nonexistent_file(self, tmp_path):
+        """Should handle nonexistent file gracefully."""
+        nonexistent = tmp_path / "nonexistent.py"
+        fix_file(nonexistent, indent_size=4, backup=False)
+        # Should not raise
+
+    def test_fix_with_backup(self, tmp_path):
+        """Should create backup when requested."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("def foo():\n  pass\n")
+
+        fix_file(test_file, indent_size=4, backup=True, dry_run=False)
+
+        bak_file = tmp_path / "test.py.bak"
+        assert bak_file.exists()
+
+    def test_failed_fix_does_not_write_partial_content(self, tmp_path):
+        """Failed JSONL repair must leave the original file untouched."""
+        test_file = tmp_path / "events.jsonl"
+        original = ' { "a" : 1 }\nnot-json\n'
+        test_file.write_text(original)
+
+        fix_file(test_file, backup=False)
+
+        assert test_file.read_text() == original
+
+    def test_jsonl_extension_uses_jsonl_strategy_for_single_line(self, tmp_path):
+        """A one-record .jsonl file should not be formatted as multi-line JSON."""
+        test_file = tmp_path / "events.jsonl"
+        test_file.write_text('{"a":1}\n')
+
+        fix_file(test_file, backup=False)
+
+        assert test_file.read_text() == '{"a": 1}\n'
+
+    def test_directory_fix_only_recurses_when_requested(self, tmp_path):
+        """The --recursive flag controls directory descent in fix mode."""
+        root_file = tmp_path / "root.py"
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        nested_file = nested / "child.py"
+        root_file.write_text("x=1\n")
+        nested_file.write_text("y=1\n")
+
+        assert _collect_targets(tmp_path, recursive=False) == [root_file.resolve()]
+        assert _collect_targets(tmp_path, recursive=True) == [
+            nested_file.resolve(),
+            root_file.resolve(),
+        ]
+
+
+class TestAnalyzeFiles:
+    """Test the analyze_files function."""
+
+    def test_analyze_empty_directory(self, tmp_path):
+        """Should handle empty directory."""
+        analyze_files([tmp_path], analyze_imports=False)
+        # Should not raise
+
+    def test_analyze_no_matching_files(self, tmp_path):
+        """Should report when no matching files found."""
+        txt_file = tmp_path / "readme.txt"
+        txt_file.write_text("Hello\n")
+
+        captured = StringIO()
+        with patch("sys.stdout", captured):
+            analyze_files([tmp_path], analyze_imports=False)
+        assert "No matching files found" in captured.getvalue()
+
+    def test_analyze_python_file(self, tmp_path):
+        """Should analyze Python files."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\nimport os\n")
+
+        captured = StringIO()
+        with patch("sys.stdout", captured):
+            analyze_files([test_file], analyze_imports=True)
+        # Should produce output
+        assert "Analysis completed" in captured.getvalue() or "Clean" in captured.getvalue()
+
+    def test_analyze_discovery_applies_excludes_and_resolves_paths(self, tmp_path):
+        """Coordinator discovery is the scan authority for excludes and path identity."""
+        keep = tmp_path / "keep.py"
+        excluded = tmp_path / "test_excluded.py"
+        keep.write_text("x = 1\n")
+        excluded.write_text("y = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([tmp_path])
+
+        assert keep.resolve() in result.context.files
+        assert excluded.resolve() not in result.context.files
+        assert all(path.is_absolute() for path in result.context.files)
+
+
+class TestCLIHelp:
+    """Test CLI help output."""
+
+    def test_help_contains_fix_mode(self):
+        """Help should mention fix mode."""
+        captured = StringIO()
+        with patch("sys.stdout", captured):
+            with patch.object(sys, "argv", ["imodent", "--help"]):
+                with pytest.raises(SystemExit):
+                    main()
+        help_text = captured.getvalue()
+        assert "FIX mode" in help_text or "fix mode" in help_text
+
+    def test_help_contains_scan_mode(self):
+        """Help should mention scan mode."""
+        captured = StringIO()
+        with patch("sys.stdout", captured):
+            with patch.object(sys, "argv", ["imodent", "--help"]):
+                with pytest.raises(SystemExit):
+                    main()
+        help_text = captured.getvalue()
+        assert "SCAN mode" in help_text or "scan mode" in help_text

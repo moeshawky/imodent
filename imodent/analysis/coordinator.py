@@ -1,5 +1,7 @@
 """Analysis coordinator - orchestrates all analyzers and fixers."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Optional
 from enum import Enum
@@ -8,7 +10,8 @@ import time
 from .context import AnalysisContext, AnalysisConfig, FileInfo
 from .findings import Finding, FixOption
 from ..graph.dependency import build_dependency_graph
-from ..registry import StrategyRegistry
+from ..interfaces import FixResult
+from ..project.project_context import ProjectContext
 
 
 class FixMode(Enum):
@@ -23,31 +26,35 @@ class FixMode(Enum):
 class AnalysisCoordinator:
     """Coordinates analysis across multiple files and analyzers."""
 
-    def __init__(self, config: Optional[AnalysisConfig] = None):
+    def __init__(
+        self,
+        config: Optional[AnalysisConfig] = None,
+        project_context: Optional["ProjectContext"] = None,
+    ):
         """
         Initialize coordinator.
 
         Args:
             config: Analysis configuration (uses defaults if None)
+            project_context: Optional project context for project-aware analysis
         """
-        self.config = config or AnalysisConfig()
+        self.project_context = project_context
+        if project_context is not None:
+            self.config = project_context.config
+        else:
+            self.config = config or AnalysisConfig()
         self._analyzers = []
         self._fixers = []
         self._load_plugins()
 
     def _load_plugins(self):
         """Load analyzer and fixer plugins."""
-        # Import to trigger registration
-        try:
-            from ..analyzers.imports import ImportAnalyzer
-            from ..fixers.imports import ImportFixer
-        except ImportError:
-            pass
+        from ..analyzers.imports import ImportAnalyzer
+        from ..analyzers.residue import ResidueAnalyzer
+        from ..fixers.imports import ImportFixer
 
-        # Collect registered plugins
-        # (Similar to how StrategyRegistry works)
-        self._analyzers = []
-        self._fixers = []
+        self._analyzers = [ImportAnalyzer(), ResidueAnalyzer()]
+        self._fixers = [ImportFixer()]
 
     def analyze(
         self,
@@ -66,7 +73,7 @@ class AnalysisCoordinator:
         """
         start_time = time.time()
 
-        # Expand paths to files
+        # Expand paths to files (use project context if available)
         files = self._discover_files(paths)
 
         # Load file contents
@@ -77,8 +84,11 @@ class AnalysisCoordinator:
             except Exception as e:
                 print(f"Warning: Could not load {path}: {e}")
 
-        # Build dependency graph
-        project_root = self._find_project_root(paths)
+        # Build dependency graph (use project context root if available)
+        if self.project_context is not None:
+            project_root = self.project_context.project_root
+        else:
+            project_root = self._find_project_root(paths)
         graph = build_dependency_graph(file_infos, project_root)
 
         # Create context
@@ -111,7 +121,7 @@ class AnalysisCoordinator:
         context: AnalysisContext,
         mode: FixMode = FixMode.SAFE_AUTO,
         decisions: Optional[dict[str, str]] = None,
-    ) -> dict[Path, "FixResult"]:
+    ) -> dict[Path, FixResult]:
         """
         Fix findings.
 
@@ -145,7 +155,7 @@ class AnalysisCoordinator:
             # Fix each finding (in reverse order to preserve line numbers)
             for finding in sorted(
                 file_findings,
-                key=lambda f: f.location.line if f.location else 0,
+                key=lambda f: (f.location.line if f.location else 0, f.id),
                 reverse=True,
             ):
                 fixer = self._get_fixer(finding)
@@ -190,8 +200,6 @@ class AnalysisCoordinator:
 
             # Store result for this file
             if content != file_info.content:
-                from ..interfaces import FixResult
-
                 results[file_path] = FixResult(
                     success=True,
                     content=content,
@@ -206,16 +214,57 @@ class AnalysisCoordinator:
     def _discover_files(self, paths: list[Path]) -> list[Path]:
         """Expand paths to list of files."""
         files = []
+        project_root = (
+            self.project_context.project_root.resolve()
+            if self.project_context is not None
+            else None
+        )
         for path in paths:
+            path = path.resolve()
             if path.is_file():
-                files.append(path)
+                if self._is_included(path, project_root) and not self._is_excluded(
+                    path, project_root
+                ):
+                    files.append(path)
             elif path.is_dir():
                 for pattern in self.config.include_patterns:
-                    files.extend(path.glob(pattern))
-                # Exclude patterns
-                for pattern in self.config.exclude_patterns:
-                    files = [f for f in files if not f.match(pattern)]
+                    for file_path in path.glob(pattern):
+                        if not file_path.is_file():
+                            continue
+                        file_path = file_path.resolve()
+                        if not self._is_excluded(file_path, project_root):
+                            files.append(file_path)
         return sorted(set(files))
+
+    def _is_included(self, path: Path, project_root: Optional[Path]) -> bool:
+        """Return whether an explicit file matches configured include patterns."""
+        if not self.config.include_patterns:
+            return True
+        candidates = [path]
+        if project_root is not None:
+            try:
+                candidates.append(path.relative_to(project_root))
+            except ValueError:
+                pass
+        return any(
+            candidate.match(pattern)
+            for candidate in candidates
+            for pattern in self.config.include_patterns
+        )
+
+    def _is_excluded(self, path: Path, project_root: Optional[Path]) -> bool:
+        """Return whether a file matches configured exclude patterns."""
+        candidates = [path]
+        if project_root is not None:
+            try:
+                candidates.append(path.relative_to(project_root))
+            except ValueError:
+                pass
+        return any(
+            candidate.match(pattern)
+            for candidate in candidates
+            for pattern in self.config.exclude_patterns
+        )
 
     def _find_project_root(self, paths: list[Path]) -> Path:
         """Find project root from paths."""
@@ -240,10 +289,14 @@ class AnalysisCoordinator:
 
     def _get_analyzers(self, names: Optional[list[str]] = None) -> list:
         """Get analyzers to run."""
-        # Import here to avoid circular imports
         from ..analyzers.imports import ImportAnalyzer
+        from ..analyzers.residue import ResidueAnalyzer
 
-        available = [ImportAnalyzer()]
+        available = []
+        if self.config.check_imports:
+            available.append(ImportAnalyzer())
+        if self.config.check_lint:
+            available.append(ResidueAnalyzer())
 
         if names:
             return [a for a in available if a.name in names]

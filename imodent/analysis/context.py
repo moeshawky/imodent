@@ -5,11 +5,9 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
-import mimetypes
+from typing import Optional
 
-if TYPE_CHECKING:
-    pass  # ast is already available at runtime
+from .findings import Location
 
 
 @dataclass
@@ -109,9 +107,6 @@ class SymbolUsage:
     location: Location
     context: str  # 'import', 'call', 'reference', 'assignment'
 
-
-# Need to import Location from findings
-from .findings import Location
 
 
 @dataclass

@@ -17,6 +17,7 @@ class AnalyzerCapability(Enum):
     TYPES = "types"
     STYLE = "style"
     SECURITY = "security"
+    RESIDUE = "residue"
 
 
 class Analyzer(ABC):

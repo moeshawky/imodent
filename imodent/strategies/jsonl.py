@@ -5,7 +5,6 @@ Each line must be valid JSON — broken lines are flagged, not silently rejected
 """
 
 import json
-import re
 from typing import List, Optional, Tuple
 
 from ..interfaces import LanguageStrategy, FixResult
@@ -46,7 +45,7 @@ class JSONLStrategy(LanguageStrategy):
         # Majority of lines should look like JSON
         if len(lines) == 1:
             return jsonish == 1
-        return jsonish >= len(lines) * 0.5
+        return jsonish > len(lines) * 0.5
 
     def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """Fix JSONL formatting (each line is compact JSON)."""

@@ -1,4 +1,4 @@
-# Contract Definitions: imodent Expansion
+# Contract Definitions: imodent Residue Recovery
 
 ## Core Data Types
 
@@ -41,7 +41,7 @@ class Finding:
     file: Path
     location: Location | None
     message: str               # Human-readable
-    fixable: bool              # Can auto-fix?
+    fixable: bool              # Can a fixer act on this directly?
     auto_fix_safe: bool        # Is auto-fix safe without review?
     data: dict = field(default_factory=dict)
     
@@ -56,6 +56,15 @@ class Finding:
     lint_source: str | None = None  # e.g., "ruff", "pyright"
 ```
 
+Finding types with special policy:
+
+| Type | Contract |
+|---|---|
+| `duplicate_import` | mechanically redundant; may be safe auto-fixed |
+| `unused_import_file` | normal import appears unused; fixable but never auto-safe |
+| `import_intent` | import carries typing/re-export/registration/side-effect evidence; not directly fixable |
+| `declared_behavior_unwired` | behavior is declared but has no executor; not directly fixable |
+
 ### FixOption
 ```python
 @dataclass
@@ -64,7 +73,7 @@ class FixOption:
     id: str
     label: str              # Short label for UI
     description: str        # Full description
-    action: str             # 'delete', 'keep', 'investigate', 'custom'
+    action: str             # 'investigate', 'keep', 'use', 'delete', 'custom'
     is_safe: bool           # Can apply without review?
     preview: str | None     # Preview of change if applicable
     requires_input: bool    # Does this need user input?
@@ -119,6 +128,7 @@ class AnalyzerCapability(Enum):
     LINT = "lint"
     TYPES = "types"
     STYLE = "style"
+    RESIDUE = "residue"
 
 class Analyzer(ABC):
     """Base class for all analyzers."""
@@ -199,6 +209,7 @@ class Fixer(ABC):
         - Fix is deterministic
         - Fix preserves semantics
         - Fix has no side effects on other code
+        - Fix is non-destructive unless the finding explicitly permits deletion
         """
         ...
     
@@ -217,10 +228,10 @@ class Fixer(ABC):
         - Each option has unique id
         
         Options for imports:
-        - 'delete': Remove unused import
-        - 'keep': Keep with @staticmethod or similar
-        - 'investigate': Needs more analysis
+        - 'investigate': Search/wire intended usage before deleting
+        - 'keep': Preserve with typing/public API/side-effect reason
         - 'use': Import is used (false positive)
+        - 'delete': Terminal cleanup after intent evidence is exhausted
         """
         ...
     

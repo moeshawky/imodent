@@ -10,24 +10,33 @@
 - Can trace usage of a symbol across the codebase
 - Must be language-aware (Python imports, JS imports, etc.)
 
-### R-02: Import Analysis (Not Just Deletion)
-**Requirement:** For unused imports, system must present options: delete OR use properly.
+### R-02: Import Analysis as Intent Evidence
+**Requirement:** For unused imports, system must treat the import as possible unfinished intent before deletion.
 **Acceptance Criteria:**
 - Detects unused imports at file level
 - Checks if import is used anywhere in the module tree
-- Presents three options: (1) delete, (2) keep (with reason), (3) investigate further
-- Can auto-resolve if deducible from context
+- Classifies imports by intent: runtime usage, typing, re-export, registration, side effect, or unknown
+- Presents recovery-first options: investigate/wire, keep with reason, false-positive, delete as terminal action
+- Can auto-resolve only when deducible from context and non-destructive
 - Only asks user when truly ambiguous
 
-### R-03: Lint Detection and Fixing
-**Requirement:** Detect and fix lint issues using best available tools.
+### R-03: LLM Residue Detection
+**Requirement:** Detect LLM-generated residue where code declares behavior but fails to wire execution.
 **Acceptance Criteria:**
-- Integrates with standard linters (ruff, pyflakes, pylint)
-- Provides unified interface for all lint types
-- Can auto-fix where safe, presents options where risky
-- Reports what was fixed and what needs attention
+- Detects declared-but-unwired behavior such as CLI flags with ignored execution paths
+- Groups related signals into an intent cluster before recommending action
+- Recommends wire, export, register, test, quarantine, or mark-unsupported before delete
+- Reports evidence for each cluster: source lines, config fields, missing executor, and destructive policy
 
-### R-04: Advisory Mode
+### R-04: Optional External Tool Evidence
+**Requirement:** External tools such as ruff may provide evidence but must not define the product behavior.
+**Acceptance Criteria:**
+- Integrates with standard linters where useful
+- Treats linter output as one signal among code, imports, exports, config, CLI, tests, and docs
+- Never auto-deletes a residue solely because a linter reports it unused
+- Falls back gracefully when external tools are unavailable
+
+### R-05: Advisory Mode
 **Requirement:** System must be able to advise on issues before fixing.
 **Acceptance Criteria:**
 - Can run in "report only" mode
@@ -35,21 +44,13 @@
 - Explains WHY something is an issue
 - Suggests specific fixes, not just "there's a problem"
 
-### R-05: Modular Architecture
+### R-06: Modular Architecture
 **Requirement:** System must be modular, not monolithic.
 **Acceptance Criteria:**
 - Each concern (indentation, imports, linting, multi-file) is a separate module
 - Modules can be used independently or together
 - Clear interfaces between modules
 - Easy to add new analyzers/fixers
-
-### R-06: Dependency on Existing Tools
-**Requirement:** Use existing tools (ruff, etc.) rather than reimplementing.
-**Acceptance Criteria:**
-- External tools listed in requirements.txt
-- Fallback if tool not available (with warning)
-- Version pinning for reproducibility
-- Import-based integration (not shell commands)
 
 ### R-07: User Interaction Policy
 **Requirement:** Only ask user when information is impossible to deduce.
@@ -58,6 +59,14 @@
 - Check usages before suggesting deletion
 - Provide context with any question
 - Default to safe action if user doesn't respond
+
+### R-08: Delete-Last Policy
+**Requirement:** Destructive cleanup is allowed only after intent recovery checks fail.
+**Acceptance Criteria:**
+- Delete is never the first recommendation for unused imports or residue clusters
+- Findings carry whether destructive action is allowed
+- Non-runtime intent findings are non-fixable evidence unless a later planner proves a safe patch
+- Safe auto-fix applies only to mechanically redundant code, such as duplicate import lines
 
 ## Non-Functional Requirements
 
