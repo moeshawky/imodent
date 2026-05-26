@@ -7,6 +7,7 @@ SCAN — multi-file analysis: imports, lint, architecture (--analyze)
 
 import argparse
 import shutil
+import sys
 from pathlib import Path
 
 # Registration side-effects (do not remove)
@@ -227,6 +228,12 @@ def analyze_files(
         print("━" * 60)
     else:
         fix_mode = None
+        if fix and check_only:
+            print(
+                "Note: --check prevents --fix from applying changes. "
+                "Remove --check to apply fixes.",
+                file=sys.stderr,
+            )
 
     # ── Apply fixes ───────────────────────────────────────────────────────
     if fix_mode is not None:
@@ -335,6 +342,11 @@ examples:
   imodent ./src --analyze --imports --interactive  prompt before each fix
   imodent ./src --analyze --imports --report  review report, no changes
   imodent ./src --analyze --imports --advisory --fix  full audit + fix
+  imodent ./src --fix                         auto-fix safe import issues (analysis implied)
+  imodent ./src --report                      review report without modifying files
+
+  Scan mode always recurses into subdirectories. -b, -n, and -c also work
+  with scan fixes; --force and -r are fix-mode-only controls.
 
   import analysis gives you options per finding:
   • delete — remove the unused import
@@ -461,7 +473,7 @@ def main():
     args = parser.parse_args()
 
     # ── Route to mode ────────────────────────────────────────────────────
-    if (
+    scan_requested = (
         args.analyze
         or args.imports
         or args.lint
@@ -470,7 +482,19 @@ def main():
         or args.interactive
         or args.fix
         or args.confidence
-    ):
+    )
+    if scan_requested:
+        if args.recursive:
+            print(
+                "Note: scan mode is always recursive; -r has no additional effect.",
+                file=sys.stderr,
+            )
+        if args.force:
+            print(
+                "Note: --force is a fix-mode flag only. Scan mode skips files "
+                "with syntax errors and reports them as unanalyzable.",
+                file=sys.stderr,
+            )
         analyze_files(
             paths=args.path or [],
             analyze_imports=args.imports,

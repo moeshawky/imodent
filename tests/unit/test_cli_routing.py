@@ -2,8 +2,7 @@
 import pytest
 import sys
 from io import StringIO
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from imodent.cli import main, fix_file, analyze_files, _collect_targets
 from imodent.analysis.coordinator import AnalysisCoordinator
 from imodent.project.project_context import ProjectContext
@@ -51,6 +50,32 @@ class TestCLIRouting:
             with patch.object(sys, "argv", ["imodent", str(test_file), "--analyze", "--lint"]):
                 main()
             mock_analyze.assert_called_once()
+
+    def test_scan_recursive_flag_prints_note(self, tmp_path, capsys):
+        """-r is accepted in scan mode but documented as a no-op."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\n")
+
+        with patch("imodent.cli.analyze_files") as mock_analyze:
+            with patch.object(sys, "argv", ["imodent", str(test_file), "--analyze", "-r"]):
+                main()
+
+        mock_analyze.assert_called_once()
+        captured = capsys.readouterr()
+        assert "scan mode is always recursive" in captured.err
+
+    def test_scan_force_flag_prints_note(self, tmp_path, capsys):
+        """--force is a fix-mode-only flag and should not disappear silently."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\n")
+
+        with patch("imodent.cli.analyze_files") as mock_analyze:
+            with patch.object(sys, "argv", ["imodent", str(test_file), "--analyze", "--force"]):
+                main()
+
+        mock_analyze.assert_called_once()
+        captured = capsys.readouterr()
+        assert "--force is a fix-mode flag only" in captured.err
 
     def test_report_without_analyze_routes_to_scan_mode(self, tmp_path):
         """--report alone should never fall through to writing fix mode."""
@@ -177,6 +202,16 @@ class TestAnalyzeFiles:
         # Should produce output
         assert "Analysis completed" in captured.getvalue() or "Clean" in captured.getvalue()
 
+    def test_fix_check_conflict_prints_note(self, tmp_path, capsys):
+        """--fix --check intentionally analyzes only, but must explain why."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\n")
+
+        analyze_files([test_file], analyze_imports=True, fix=True, check_only=True)
+
+        captured = capsys.readouterr()
+        assert "--check prevents --fix" in captured.err
+
     def test_analyze_discovery_applies_excludes_and_resolves_paths(self, tmp_path):
         """Coordinator discovery is the scan authority for excludes and path identity."""
         keep = tmp_path / "keep.py"
@@ -267,3 +302,5 @@ class TestCLIHelp:
                     main()
         help_text = captured.getvalue()
         assert "SCAN mode" in help_text or "scan mode" in help_text
+        assert "Scan mode always recurses" in help_text
+        assert "--fix                         auto-fix safe import issues" in help_text
