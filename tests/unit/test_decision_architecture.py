@@ -11,6 +11,7 @@ from pathlib import Path
 from imodent.analysis.context import AnalysisConfig, AnalysisContext, FileInfo
 from imodent.analysis.coordinator import (
     AnalysisCoordinator,
+    FixMode,
     _deduplicate_findings,
 )
 from imodent.analysis.decisions import (
@@ -367,6 +368,47 @@ class TestAllAutoFixSafety:
 # ---------------------------------------------------------------------------
 
 
+class TestReviewPublicApiGate:
+    def test_proof_state_review_public_api_requires_decision(self):
+        from imodent.analysis.decisions import (
+            _requires_decision,
+            DecisionCandidate,
+            subject_key_for_import,
+        )
+        sk = subject_key_for_import(
+            Path("mypkg/__init__.py"), "mypkg", "Public", None
+        )
+        candidate = DecisionCandidate(
+            issue_type="unused_import",
+            subject_key=sk,
+            confidence=0.85,
+            confidence_label="high",
+            proof_state="REVIEW_PUBLIC_API",
+        )
+        assert _requires_decision(candidate, None, []) is True
+
+    def test_confidence_0_10_from_context_evidence(self):
+        from imodent.analysis.decisions import _score_confidence
+        ev = Evidence(
+            kind="ContextEvidence",
+            file=Path("mypkg/__init__.py"),
+            location=None,
+            claim="public_api_reexport",
+            polarity="context",
+            strength=0.30,
+        )
+        f = Finding.create(
+            type="lint",
+            severity=Severity.WARNING,
+            file=Path("mypkg/__init__.py"),
+            message="F401: `mypkg.Public` imported but unused",
+            lint_code="F401",
+            lint_source="ruff",
+        )
+        score = _score_confidence(f, [f], [ev])
+        assert score <= 0.15
+
+
 class TestConfidenceOutput:
     def test_subject_key_to_dict(self):
         """Subject keys serialize cleanly."""
@@ -400,10 +442,8 @@ class TestEvidenceToDict:
         """Evidence.to_dict includes id, polarity, claim, strength."""
         e = Evidence(
             kind="test",
-            source="unit",
             file=Path("test.py"),
             location=None,
-            subject="test",
             claim="test claim",
             polarity="supports",
             strength=0.75,
@@ -442,6 +482,53 @@ class TestF401ClassifiedAsUnusedImport:
         )
         assert _issue_type_from_finding(f) == "lint"
 
+    def test_ruff_f401_single_alias_is_destructive_allowed(self, tmp_path):
+        """Ruff F401 can only become an auto-delete candidate through DecisionEngine."""
+        file_path = tmp_path / "sample.py"
+        file_path.write_text("import os\n\nx = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = True
+        project_context.config.check_lint = True
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([file_path])
+
+        candidates = [c for c in result.candidates if c.issue_type == "unused_import"]
+        assert candidates
+        assert candidates[0].destructive_allowed is True
+
+        fix_results = coordinator.fix(
+            result.findings,
+            result.context,
+            mode=FixMode.SAFE_AUTO,
+            candidates=result.candidates,
+        )
+        assert file_path in fix_results
+        assert fix_results[file_path].content == "x = 1\n"
+
+    def test_grouped_ruff_f401_is_not_destructive_allowed(self, tmp_path):
+        """Grouped imports stay blocked until imodent has alias-level rewrite."""
+        file_path = tmp_path / "sample.py"
+        file_path.write_text("import os, sys\n\nprint(sys.version)\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = True
+        project_context.config.check_lint = True
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([file_path])
+
+        candidates = [c for c in result.candidates if c.issue_type == "unused_import"]
+        assert candidates
+        assert all(not c.destructive_allowed for c in candidates)
+
+        fix_results = coordinator.fix(
+            result.findings,
+            result.context,
+            mode=FixMode.SAFE_AUTO,
+            candidates=result.candidates,
+        )
+        assert fix_results == {}
+
 
 # ---------------------------------------------------------------------------
 # Evidence rehydration  (Bug 2 regression)
@@ -454,8 +541,8 @@ class TestEvidenceRehydration:
         from imodent.analysis.decisions import DecisionEngine
         file = Path("/tmp/sample.py").resolve()
         ev = Evidence(
-            id=42, kind="RuffDiagnostic", source="ruff",
-            file=file, location=Location(line=1), subject="F401",
+            id=42, kind="RuffDiagnostic",
+            file=file, location=Location(line=1),
             claim="unused_import", polarity="supports", strength=0.85,
         )
         finding = Finding(
@@ -480,8 +567,8 @@ class TestEvidenceRehydration:
         from imodent.analysis.decisions import DecisionEngine
         file = Path("/tmp/sample.py").resolve()
         ev = Evidence(
-            id=99, kind="ContextEvidence", source="analyst",
-            file=file, location=Location(line=1), subject="F401",
+            id=99, kind="ContextEvidence",
+            file=file, location=Location(line=1),
             claim="public_api_reexport", polarity="opposes", strength=0.3,
         )
         finding = Finding(
@@ -738,3 +825,87 @@ class TestAnalysisContextTyping:
             f"findings must be annotated as list[Finding], got {hint!r}"
         )
 
+
+# ---------------------------------------------------------------------------
+# Ruff fix applicability is evidence, not edit authorization  (W6)
+# ---------------------------------------------------------------------------
+
+
+class TestRuffFixApplicability:
+    def test_ruff_safe_fix_does_not_authorize_imodent_without_single_alias(self):
+        """Ruff "safe" applies to Ruff's patch, not imodent's whole-line edit."""
+        from imodent.analysis.decisions import DecisionEngine
+        file = Path("/tmp/sample.py").resolve()
+        ev = Evidence(
+            id=43, kind="RuffDiagnostic",
+            file=file, location=Location(line=1),
+            claim="unused_import", polarity="supports", strength=0.85,
+            data={"fix": {"applicability": "safe"}},
+        )
+        finding = Finding(
+            id="f1", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `os` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "evidence": [{"id": 43}],
+                "import_info": {"module": None, "name": "os", "alias": None, "single_alias": False},
+            },
+        )
+        candidates = DecisionEngine.build_candidates([finding], [ev])
+        assert len(candidates) == 1
+        assert candidates[0].ruff_fix_applicability == "safe"
+        assert candidates[0].destructive_allowed is False
+
+    def test_ruff_unsafe_fix_blocks_destructive_without_single_alias(self):
+        """Ruff "unsafe" fix → destructive_allowed=False unless single_alias."""
+        from imodent.analysis.decisions import DecisionEngine
+        file = Path("/tmp/sample.py").resolve()
+        ev = Evidence(
+            id=44, kind="RuffDiagnostic",
+            file=file, location=Location(line=1),
+            claim="unused_import", polarity="supports", strength=0.85,
+            data={"fix": {"applicability": "unsafe"}},
+        )
+        finding = Finding(
+            id="f2", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `os` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "evidence": [{"id": 44}],
+                "import_info": {"module": None, "name": "os", "alias": None, "single_alias": False},
+            },
+        )
+        candidates = DecisionEngine.build_candidates([finding], [ev])
+        assert len(candidates) == 1
+        assert candidates[0].ruff_fix_applicability == "unsafe"
+        assert candidates[0].destructive_allowed is False
+
+    def test_ruff_unsafe_fix_with_single_alias_allows_destructive(self):
+        """Ruff "unsafe" fix + single_alias=True → destructive_allowed=True."""
+        from imodent.analysis.decisions import DecisionEngine
+        file = Path("/tmp/sample.py").resolve()
+        ev = Evidence(
+            id=45, kind="RuffDiagnostic",
+            file=file, location=Location(line=1),
+            claim="unused_import", polarity="supports", strength=0.85,
+            data={"fix": {"applicability": "unsafe"}},
+        )
+        finding = Finding(
+            id="f3", type="lint", severity=Severity.WARNING,
+            file=file, location=Location(line=1),
+            message="F401: `os` imported but unused",
+            fixable=False, auto_fix_safe=False,
+            lint_code="F401", lint_source="ruff",
+            data={
+                "evidence": [{"id": 45}],
+                "import_info": {"module": None, "name": "os", "alias": None, "single_alias": True},
+            },
+        )
+        candidates = DecisionEngine.build_candidates([finding], [ev])
+        assert len(candidates) == 1
+        assert candidates[0].ruff_fix_applicability == "unsafe"
+        assert candidates[0].destructive_allowed is True

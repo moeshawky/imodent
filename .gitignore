@@ -9,10 +9,14 @@ build/
 dist/
 *.egg-info/
 *.egg
+wheelhouse/
 
 # Virtual environments
+.venv/
 venv/
 ENV/
+.env
+.env.*
 
 # IDE
 .idea/
@@ -30,10 +34,30 @@ Thumbs.db
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
 
 # Temp / scratch files
 test.txt
 *.tmp
+*.log
 
 .codegraph/
 AGENTS.md
+
+# Local agent/session artifacts
+.antigravitycli/
+ses.txt
+prompt.md
+pr-pub-ses.md
+nexus.zip
+*_REPORT*.md
+COMPLETE_FINDINGS.md
+COMPOUNDED_BUG_PROTOCOL*.md
+ROOT_CAUSE_ANALYSIS.md
+
+# AI annotation proposals (RNA layer — reviewed before applying as DNA)
+.annotations/

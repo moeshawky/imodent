@@ -279,6 +279,68 @@ class TestAnalyzeFiles:
         )
         assert not any(f.type == "unused_import_file" for f in result.findings)
 
+    def test_analyze_respects_config_when_flags_are_not_explicit(self, tmp_path, capsys):
+        """--analyze alone should not silently replace project scan config."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'sample'\n")
+        (tmp_path / ".imodent.yaml").write_text(
+            "check_imports: false\ncheck_lint: false\n"
+        )
+        test_file = tmp_path / "sample.py"
+        test_file.write_text("import os\n\nx = 1\n")
+
+        analyze_files([test_file])
+
+        captured = capsys.readouterr()
+        assert "Findings: 0" in captured.out
+
+    def test_lint_flag_does_not_disable_import_analysis(self, tmp_path, monkeypatch):
+        """Passing --lint alone should not force analyze_imports=False.
+
+        The None sentinel must survive so analyze_files reads the config default.
+        """
+        import imodent.cli as cli_module
+
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\n")
+
+        def capture_call(paths, **kwargs):
+            capture_call.kwargs = kwargs
+
+        capture_call.kwargs = None
+        monkeypatch.setattr(cli_module, "analyze_files", capture_call)
+        monkeypatch.setattr(sys, "argv", ["imodent", str(test_file), "--analyze", "--lint"])
+        cli_module.main()
+
+        assert capture_call.kwargs is not None
+        assert capture_call.kwargs["analyze_imports"] is None, (
+            "--lint must not suppress import analysis (None sentinel expected)"
+        )
+        assert capture_call.kwargs["analyze_lint"] is True
+
+    def test_imports_flag_does_not_disable_lint_analysis(self, tmp_path, monkeypatch):
+        """Passing --imports alone should not force analyze_lint=False.
+
+        The None sentinel must survive so analyze_files reads the config default.
+        """
+        import imodent.cli as cli_module
+
+        test_file = tmp_path / "test.py"
+        test_file.write_text("import os\n")
+
+        def capture_call(paths, **kwargs):
+            capture_call.kwargs = kwargs
+
+        capture_call.kwargs = None
+        monkeypatch.setattr(cli_module, "analyze_files", capture_call)
+        monkeypatch.setattr(sys, "argv", ["imodent", str(test_file), "--analyze", "--imports"])
+        cli_module.main()
+
+        assert capture_call.kwargs is not None
+        assert capture_call.kwargs["analyze_imports"] is True
+        assert capture_call.kwargs["analyze_lint"] is None, (
+            "--imports must not suppress lint analysis (None sentinel expected)"
+        )
+
 
 class TestCLIHelp:
     """Test CLI help output."""

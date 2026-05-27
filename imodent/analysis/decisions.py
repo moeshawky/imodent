@@ -171,6 +171,7 @@ class DecisionCandidate:
     suggested_actions: list[ActionOption] = field(default_factory=list)
     destructive_allowed: bool = False
     requires_user_decision: bool = False
+    ruff_fix_applicability: str | None = None
 
     @property
     def relative_path(self) -> str:
@@ -346,6 +347,14 @@ class DecisionEngine:
                         if ev is not None:
                             _attach_evidence_by_polarity(candidate, ev)
 
+            # Extract Ruff fix applicability from evidence
+            for ev in candidate.evidence_for + candidate.evidence_against:
+                if ev.kind == "RuffDiagnostic" and ev.data.get("fix"):
+                    applicability = ev.data["fix"].get("applicability")
+                    if applicability:
+                        candidate.ruff_fix_applicability = applicability
+                        break
+
             # Score confidence
             candidate.confidence = _score_confidence(rep, group, evidence_list)
             candidate.confidence_label = _compute_confidence_label(candidate.confidence)
@@ -496,10 +505,19 @@ def _score_confidence(
     - F401 in __init__.py + package-local + __all__: ~0.10
     - Try-block import + no use + no marker: ~0.65
     """
-    f_type = getattr(rep, "type", "unknown")
-    lint_code = getattr(rep, "lint_code", None)
-    file = getattr(rep, "file", Path("."))
-    data = getattr(rep, "data", {}) or {}
+    strongest_lint = next(
+        (
+            f for f in group
+            if getattr(f, "lint_code", None) in {"F821", "F841", "F401"}
+        ),
+        None,
+    )
+    scorer = strongest_lint or rep
+
+    f_type = getattr(scorer, "type", "unknown")
+    lint_code = getattr(scorer, "lint_code", None)
+    file = getattr(scorer, "file", Path("."))
+    data = getattr(scorer, "data", {}) or {}
     import_info = data.get("import_info") or {}
     intent = import_info.get("intent", "")
 
@@ -513,6 +531,11 @@ def _score_confidence(
             # Check if it's a package-local __init__.py re-export
             if file.name == "__init__.py" and intent == "re_export":
                 return 0.10
+            # Defense-in-depth: evidence-driven public_api_reexport detection
+            for ev in evidence_list:
+                if ev.claim == "public_api_reexport" or ev.polarity == "context":
+                    if ev.strength < 0.50:
+                        return 0.10
             return 0.85
 
     # AST-based unused import
@@ -539,18 +562,17 @@ def _destructive_allowed(candidate: DecisionCandidate, rep, group: list) -> bool
     if candidate.confidence < 0.80:
         return False
 
-    f_type = getattr(rep, "type", "unknown")
-    is_single_alias = rep.data.get("import_info", {}).get(
-        "single_alias", False
-    )
-    auto_fix_safe = getattr(rep, "auto_fix_safe", False)
-
-    if f_type == "duplicate_import" and auto_fix_safe:
+    if candidate.issue_type == "duplicate_import" and any(
+        getattr(f, "auto_fix_safe", False) for f in group
+    ):
         return True
 
-    if f_type in ("unused_import", "unused_import_file"):
-        if is_single_alias and not _has_suppression_markers(rep):
-            return True
+    if candidate.issue_type == "unused_import":
+        for finding in group:
+            import_info = getattr(finding, "data", {}).get("import_info", {})
+            is_single_alias = import_info.get("single_alias", False)
+            if is_single_alias and not _has_suppression_markers(finding):
+                return True
 
     return False
 
@@ -567,6 +589,7 @@ def _requires_decision(
         ProofState.CONFLICTING_EVIDENCE.value,
         ProofState.REVIEW_REQUIRED.value,
         ProofState.INSUFFICIENT_EVIDENCE.value,
+        "REVIEW_PUBLIC_API",
     ):
         return True
 

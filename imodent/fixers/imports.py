@@ -5,6 +5,7 @@ import ast
 from .base import Fixer
 from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding, FixOption
+from ..analyzers.imports import _is_single_alias_import_statement
 from ..interfaces import FixResult
 
 
@@ -42,7 +43,6 @@ class ImportFixer(Fixer):
                     description="Remove this duplicate import (keeping the first occurrence)",
                     action="delete",
                     is_safe=True,
-                    preview=self._preview_remove_import(finding),
                 )
             )
 
@@ -108,7 +108,6 @@ class ImportFixer(Fixer):
                     description="Remove only after no wiring, export, registration, or typing intent remains",
                     action="delete",
                     is_safe=False,
-                    preview=self._preview_remove_import(finding),
                 )
             )
 
@@ -158,13 +157,6 @@ class ImportFixer(Fixer):
             fixed_valid=True,
         )
 
-    def _preview_remove_import(self, finding: Finding) -> str:
-        """Generate preview of import removal."""
-        location = finding.location
-        if location:
-            return f"Line {location.line}: Remove import"
-        return "Remove import"
-
     def _remove_import(self, finding: Finding, content: str) -> FixResult:
         """Remove an import from content."""
         lines = content.splitlines()
@@ -192,7 +184,7 @@ class ImportFixer(Fixer):
                 fixed_valid=True,
             )
 
-        if not _can_remove_whole_import_line(content, location.line):
+        if not _is_single_alias_import_statement(content, location.line):
             return FixResult(
                 success=False,
                 content=content,
@@ -235,18 +227,3 @@ class ImportFixer(Fixer):
             original_valid=True,
             fixed_valid=True,
         )
-
-
-def _can_remove_whole_import_line(content: str, line: int) -> bool:
-    """Whole-line deletion is safe only for one-line, one-alias imports."""
-    try:
-        tree = ast.parse(content)
-    except SyntaxError:
-        return False
-
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)) and node.lineno == line:
-            if getattr(node, "end_lineno", node.lineno) != node.lineno:
-                return False
-            return len(node.names) == 1
-    return False

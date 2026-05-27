@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import sys
 from typing import Optional
 
 from ..analysis.context import AnalysisConfig
@@ -90,8 +91,8 @@ def _discover_project_name(project_root: Path) -> str:
                 name = data.get("project", {}).get("name", "")
                 if name:
                     return str(name)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: Could not parse {pyproject}: {e}", file=sys.stderr)
 
     return project_root.name
 

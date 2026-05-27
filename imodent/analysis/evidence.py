@@ -29,10 +29,10 @@ class Evidence:
     """A replayable fact collected during analysis."""
 
     kind: str
-    source: str
     file: Path
     location: Location | None
-    subject: str
+    source: str = ""
+    subject: str = ""
     data: dict[str, Any] = field(default_factory=dict)
     polarity: str = "context"
     claim: str = ""

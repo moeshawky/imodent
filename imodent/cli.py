@@ -97,10 +97,18 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         ".yml",
     }:
         bak = file_path.with_suffix(file_path.suffix + ".bak")
-        shutil.copy2(file_path, bak)
+        try:
+            shutil.copy2(file_path, bak)
+        except Exception as e:
+            print(f"✗ {file_path}: could not create backup: {e}")
+            return
         print(f" ↳ backup → {bak}")
 
-    file_path.write_text(result.content, encoding="utf-8")
+    try:
+        file_path.write_text(result.content, encoding="utf-8")
+    except Exception as e:
+        print(f"✗ {file_path}: could not write file: {e}")
+        return
     print(f"✓ {file_path}")
     for err in result.errors:
         print(f" ✗ {err}")
@@ -132,8 +140,8 @@ def _strategy_for_path(file_path: Path):
 
 def analyze_files(
     paths: list[Path],
-    analyze_imports: bool = True,
-    analyze_lint: bool = False,
+    analyze_imports: bool | None = None,
+    analyze_lint: bool | None = None,
     advisory: bool = False,
     fix: bool = False,
     interactive: bool = False,
@@ -145,15 +153,16 @@ def analyze_files(
     confidence: bool = False,
 ):
     """Scan project for import issues, lint violations, architectural drift."""
-    if not (analyze_imports or analyze_lint or advisory):
-        analyze_imports = True
-
     if not paths:
         print("No matching files found.")
         return
 
     resolved_paths = [path.resolve() for path in paths]
     project_context = ProjectContext.discover(resolved_paths[0])
+    if analyze_imports is None:
+        analyze_imports = project_context.config.check_imports
+    if analyze_lint is None:
+        analyze_lint = project_context.config.check_lint
     project_context.config.check_imports = analyze_imports
     project_context.config.check_lint = analyze_lint
     coordinator = AnalysisCoordinator(project_context=project_context)
@@ -237,7 +246,12 @@ def analyze_files(
 
     # ── Apply fixes ───────────────────────────────────────────────────────
     if fix_mode is not None:
-        fix_results = coordinator.fix(result.findings, result.context, mode=fix_mode)
+        fix_results = coordinator.fix(
+            result.findings,
+            result.context,
+            mode=fix_mode,
+            candidates=result.candidates,
+        )
         for file_path, fix_result in fix_results.items():
             if not fix_result.success:
                 print(f" ✗ {file_path}")
@@ -246,14 +260,24 @@ def analyze_files(
                 continue
             if backup and fix_mode != FixMode.REPORT:
                 bak = file_path.with_suffix(file_path.suffix + ".bak")
-                shutil.copy2(file_path, bak)
+                try:
+                    shutil.copy2(file_path, bak)
+                except Exception as e:
+                    print(f" ✗ {file_path}")
+                    print(f"  → could not create backup: {e}")
+                    continue
                 print(f" ↳ backup → {bak}")
             if dry_run or fix_mode == FixMode.REPORT:
                 tag = "dry-run" if dry_run else "review"
                 print(f" ~ {file_path} ({tag})")
                 print(fix_result.content[:500])
             else:
-                file_path.write_text(fix_result.content, encoding="utf-8")
+                try:
+                    file_path.write_text(fix_result.content, encoding="utf-8")
+                except Exception as e:
+                    print(f" ✗ {file_path}")
+                    print(f"  → could not write file: {e}")
+                    continue
                 print(f" ✓ {file_path}")
 
 
@@ -369,7 +393,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version="imodent 1.0.0",
+        version="imodent 1.0.0a1",
         help="show version and exit",
     )
 
@@ -497,8 +521,8 @@ def main():
             )
         analyze_files(
             paths=args.path or [],
-            analyze_imports=args.imports,
-            analyze_lint=args.lint,
+            analyze_imports=True if args.imports else None,
+            analyze_lint=True if args.lint else None,
             advisory=args.advisory,
             fix=args.fix,
             interactive=args.interactive,

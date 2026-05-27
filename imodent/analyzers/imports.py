@@ -226,9 +226,9 @@ def _import_binding_evidence(
     """Build normalized evidence for an import binding decision."""
     return Evidence(
         kind="ImportBinding",
-        source="ast",
         file=file_path,
         location=Location(line=imp.line),
+        source="ast",
         subject=checked_name,
         data={
             "module": imp.module,
@@ -391,9 +391,9 @@ class ImportAnalyzer(Analyzer):
                 context.add_evidence(
                     Evidence(
                         kind="AnnotationUse",
-                        source=self.name,
                         file=path,
                         location=None,
+                        source=self.name,
                         subject=type_name,
                     )
                 )
@@ -444,15 +444,16 @@ class ImportAnalyzer(Analyzer):
                         auto_fix_safe=False,  # Never safe by default
                         import_name=imp.name,
                         import_module=imp.module,
-                        usage_count=0,
                         data={
                             "import_info": {
                                 "module": imp.module,
                                 "name": imp.name,
                                 "alias": imp.alias,
-                                "is_from": imp.is_from_import,
                                 "intent": intent,
                                 "intent_reason": reason,
+                                "single_alias": _is_single_alias_import_statement(
+                                    file_info.content, imp.line
+                                ),
                             }
                         },
                     )
@@ -495,7 +496,7 @@ class ImportAnalyzer(Analyzer):
                         ),
                         import_name=imp.name,
                         import_module=imp.module,
-                        data={"first_occurrence": first_imp.line},
+                        data={},
                     )
                 )
             else:
@@ -614,9 +615,11 @@ class ImportAnalyzer(Analyzer):
                             "import_info": {
                                 "module": imp.module,
                                 "name": imp.name,
-                                "checked_name": name_to_check,
                                 "intent": intent,
                                 "intent_reason": intent_reason,
+                                "single_alias": _is_single_alias_import_statement(
+                                    file_info.content, imp.line
+                                ),
                             }
                         },
                     )

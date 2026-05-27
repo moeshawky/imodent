@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imodent"
-version = "1.0.0"
+version = "1.0.0a1"
 description = "Code intelligence tool — fix, scan, and advise on Python, JSON, YAML"
 readme = "README.md"
 license = {text = "MIT"}
@@ -45,6 +45,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["imodent*"]
+
+[tool.setuptools.package-data]
+imodent = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ast
 import shutil
 import subprocess
 import sys
@@ -157,9 +158,9 @@ class LintAnalyzer(Analyzer):
 
             primary_evidence = Evidence(
                 kind="RuffDiagnostic",
-                source="ruff",
                 file=file_path,
                 location=location,
+                source="ruff",
                 subject=code,
                 data=diagnostic,
                 claim=_claim_for_ruff_code(code),
@@ -177,9 +178,9 @@ class LintAnalyzer(Analyzer):
                 proof_state_raw = "REVIEW_PUBLIC_API"
                 context_ev = Evidence(
                     kind="RuffDiagnostic",
-                    source="ruff",
                     file=file_path,
                     location=location,
+                    source="ruff",
                     subject=code,
                     data=diagnostic,
                     claim="public_api_reexport",
@@ -332,10 +333,36 @@ def _import_info_from_diagnostic(
         module = None
         name = imported
 
+    intent = ""
+    if file_path.name == "__init__.py":
+        package_name = file_path.parent.name
+        if imported.startswith(f"{package_name}."):
+            intent = "re_export"
+
     return {
         "module": module,
         "name": name,
         "alias": None,
+        "intent": intent,
+        "single_alias": _is_single_alias_source_line(source_line),
         "source": "ruff",
         "raw_message": message,
     }
+
+
+def _is_single_alias_source_line(source_line: str) -> bool:
+    """Return whether a Ruff F401 line can be safely removed as a whole line.
+
+    Semantically equivalent to _is_single_alias_import_statement in analyzers/imports.py
+    but operates on a single source line (parsed in isolation) rather than the full file.
+    """
+    try:
+        tree = ast.parse(source_line.lstrip())
+    except SyntaxError:
+        return False
+    if len(tree.body) != 1 or not isinstance(tree.body[0], (ast.Import, ast.ImportFrom)):
+        return False
+    node = tree.body[0]
+    if getattr(node, "end_lineno", node.lineno) != node.lineno:
+        return False
+    return len(node.names) == 1

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 from typing import Optional
 from enum import Enum
 import fnmatch
@@ -11,7 +12,12 @@ import time
 
 from .context import AnalysisContext, AnalysisConfig, FileInfo
 from .findings import Finding, FixOption, ProofState
-from .decisions import DecisionEngine, _subject_key_from_finding
+from .decisions import (
+    DecisionCandidate,
+    DecisionEngine,
+    _issue_type_from_finding,
+    _subject_key_from_finding,
+)
 from ..graph.dependency import build_dependency_graph
 from ..interfaces import FixResult
 from ..project.discovery import is_generated_artifact
@@ -138,6 +144,7 @@ class AnalysisCoordinator:
         context: AnalysisContext,
         mode: FixMode = FixMode.SAFE_AUTO,
         decisions: Optional[dict[str, str]] = None,
+        candidates: Optional[list[DecisionCandidate]] = None,
     ) -> dict[Path, FixResult]:
         """
         Fix findings.
@@ -147,6 +154,7 @@ class AnalysisCoordinator:
             context: Analysis context
             mode: How to handle fixes
             decisions: Pre-made decisions (finding_id -> option_id)
+            candidates: DecisionEngine output used as the safety authority
 
         Returns:
             Dict of path -> FixResult
@@ -161,6 +169,9 @@ class AnalysisCoordinator:
 
         results = {}
         decisions = decisions or {}
+        if candidates is None:
+            candidates = DecisionEngine.build_candidates(findings, context.evidence)
+        candidate_by_finding_id = _index_candidates_by_finding_id(candidates)
 
         # Group findings by file
         by_file = {}
@@ -183,26 +194,34 @@ class AnalysisCoordinator:
                 key=lambda f: (f.location.line if f.location else 0, f.id),
                 reverse=True,
             ):
-                fixer = self._get_fixer(finding)
+                candidate = candidate_by_finding_id.get(finding.id)
+                issue_type = (
+                    candidate.issue_type if candidate is not None
+                    else _issue_type_from_finding(finding)
+                )
+                routed_finding = _finding_with_issue_type(finding, issue_type)
+                fixer = self._get_fixer(routed_finding)
                 if not fixer:
                     continue
 
                 # Determine action based on mode
                 if mode == FixMode.SAFE_AUTO:
-                    if not finding.auto_fix_safe:
+                    if candidate is None or not candidate.destructive_allowed:
                         continue  # Skip
-                    option = fixer.get_options(finding, context)[
-                        0
-                    ]  # Use first (safest)
+                    option = _destructive_option(fixer, routed_finding, context)
+                    if not option:
+                        continue
 
                 elif mode == FixMode.ALL_AUTO:
-                    if not fixer.can_auto_fix(finding):
+                    if candidate is None or not candidate.destructive_allowed:
                         continue
-                    option = fixer.get_options(finding, context)[0]
+                    option = _destructive_option(fixer, routed_finding, context)
+                    if not option:
+                        continue
 
                 elif mode == FixMode.INTERACTIVE:
                     # Present options and get user choice
-                    option = self._get_user_choice(finding, fixer, context)
+                    option = self._get_user_choice(routed_finding, fixer, context)
                     if not option:
                         continue
 
@@ -211,15 +230,15 @@ class AnalysisCoordinator:
 
                 else:
                     # Check for pre-made decision
-                    if finding.id in decisions:
-                        option_id = decisions[finding.id]
-                        options = fixer.get_options(finding, context)
+                    if routed_finding.id in decisions:
+                        option_id = decisions[routed_finding.id]
+                        options = fixer.get_options(routed_finding, context)
                         option = next((o for o in options if o.id == option_id), None)
                     else:
                         continue
 
                 if option:
-                    result = fixer.apply_fix(finding, option, content)
+                    result = fixer.apply_fix(routed_finding, option, content)
                     if result.success:
                         finding.proof_state = ProofState.ACCEPTED.value
                         content = result.content
@@ -416,6 +435,34 @@ def _matches_path_pattern(path: Path, pattern: str) -> bool:
         stripped = stripped[3:]
     head = stripped.split("/", 1)[0]
     return bool(head) and any(fnmatch.fnmatchcase(part, head) for part in path.parts)
+
+
+def _index_candidates_by_finding_id(
+    candidates: list[DecisionCandidate],
+) -> dict[str, DecisionCandidate]:
+    """Map every source finding to the candidate that owns its decision."""
+    index = {}
+    for candidate in candidates:
+        for finding_id in candidate.finding_ids:
+            index[finding_id] = candidate
+    return index
+
+
+def _finding_with_issue_type(finding: Finding, issue_type: str) -> Finding:
+    """Route lint-backed import findings through import fixers without mutating evidence."""
+    if finding.type == issue_type:
+        return finding
+    if issue_type in {"unused_import", "duplicate_import"}:
+        return replace(finding, type=issue_type, fixable=True)
+    return finding
+
+
+def _destructive_option(fixer, finding: Finding, context: AnalysisContext) -> FixOption | None:
+    """Select the first destructive option after DecisionEngine safety approval."""
+    for option in fixer.get_options(finding, context):
+        if option.action == "delete" or not option.is_safe:
+            return option
+    return None
 
 
 def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
