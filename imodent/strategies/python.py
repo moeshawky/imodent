@@ -63,6 +63,9 @@ class ASTStructureVisitor:
     """Extracts structural indentation levels from the AST."""
 
     def __init__(self):
+        # Maps AST node line numbers to their indentation level (0=module-level,
+        # 1=first-level block, ...). Populated by visit_node() for every node
+        # with a .lineno attribute.
         self.line_to_level: Dict[int, int] = {}
         self.block_starts: set[int] = set()
 
@@ -201,6 +204,9 @@ class PythonStrategy(LanguageStrategy):
         original_valid, original_error = self.validate(content)
         if not original_valid:
             is_indent_error = "indent" in original_error.lower()
+            # Non-indentation syntax errors (e.g., `class F o:`, unclosed paren) cannot
+            # be fixed by a reindenter. Without --force, abort early to avoid 3 wasted
+            # fallback steps.
             if not is_indent_error:
                 # Structural syntax error (not indentation) — heuristic cannot fix this.
                 # Without --force, abort immediately instead of wasting 3 fallback steps.

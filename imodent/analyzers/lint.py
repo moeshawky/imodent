@@ -32,6 +32,17 @@ class LintAnalyzer(Analyzer):
         return {"python"}
 
     def analyze(self, context: AnalysisContext) -> list[Finding]:
+        """
+        Runs `ruff check --output-format=json --no-fix` on all Python files.
+        Falls back to `python -m ruff` if the `ruff` binary is not on PATH.
+        Failure modes handled: RuffNotFound (lint_oracle_unavailable), OSError
+        (lint_oracle_failed), non-zero/non-1 exit (lint_oracle_failed), invalid
+        JSON output (lint_oracle_failed). All use Finding.create with proof_state
+        INSUFFICIENT_EVIDENCE.
+        For package-local __init__.py F401 re-exports: records a context Evidence
+        (polarity="context", strength=0.3, claim="public_api_reexport") alongside
+        the finding instead of suppressing it — lets DecisionEngine weigh it.
+        """
         if not context.config.use_ruff:
             return []
 
@@ -241,6 +252,12 @@ def _severity_for_ruff_code(code: str) -> Severity:
 
 
 def _proof_state_for_ruff_code(code: str, file_path: Path) -> str:
+    """
+    Maps Ruff codes to proof states:
+      F401 in __init__.py → REVIEW_PUBLIC_API (might be re-export)
+      F401, F841 → PROVEN_UNUSED (Ruff confirmed)
+      all others → EXTERNALLY_VERIFIED
+    """
     if code == "F401" and file_path.name == "__init__.py":
         return "REVIEW_PUBLIC_API"
     if code in {"F401", "F841"}:

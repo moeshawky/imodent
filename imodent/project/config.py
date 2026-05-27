@@ -23,6 +23,7 @@ def load_config_from_yaml(path: Path) -> Optional[dict]:
             return data
     except Exception as e:
         import sys
+        # print-to-stderr fallback: avoids racing with --json output that goes to stdout
         print(f"Warning: {path.name} exists but could not be parsed: {e}. Using defaults.", file=sys.stderr)
     return None
 
@@ -36,6 +37,7 @@ def _get_toml_loader():
     for name in candidates:
         try:
             import importlib
+            # importlib called inside loop, not at top level — first TOML library may raise ImportError, not the function's caller
             mod = importlib.import_module(name)
             return mod.load
         except ImportError:

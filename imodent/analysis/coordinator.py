@@ -229,6 +229,8 @@ class AnalysisCoordinator:
                     continue  # Don't fix
 
                 else:
+                    # UNREACHABLE: all 4 FixMode values handled above. Defensive
+                    # fallback for future enum additions.
                     # Check for pre-made decision
                     if routed_finding.id in decisions:
                         option_id = decisions[routed_finding.id]

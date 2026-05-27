@@ -28,6 +28,12 @@ class ResidueAnalyzer(Analyzer):
         return {AnalyzerCapability.RESIDUE}
 
     def analyze(self, context: AnalysisContext) -> list[Finding]:
+        """
+        Single-pass residue check: runs _find_declared_lint_without_executor.
+        Returns at most 1 finding. Designed to be extended with additional
+        residue patterns (dead feature flags, unused config fields, orphaned
+        test stubs). Currently only checks lint plumbing.
+        """
         findings: list[Finding] = []
 
         if context.config.check_lint:
@@ -40,6 +46,15 @@ class ResidueAnalyzer(Analyzer):
     def _find_declared_lint_without_executor(
         self, context: AnalysisContext
     ) -> Finding | None:
+        """
+        Checks for "lint declared but not implemented" pattern:
+        1. Finds CLI flag "--lint" in argparse add_argument calls (via AST)
+        2. Finds "analyze_lint" text in code (text search fallback)
+        3. Finds "check_lint" config field text (text search fallback)
+        4. Finds any LintAnalyzer class or analyze_lint function (via AST)
+        If all three signals exist but no executor: emits declared_behavior_unwired
+        finding with cluster="lint", recommended actions, destructive_allowed=False.
+        """
         cli_flag = self._find_argparse_flag(context, "--lint")
         analyze_param = self._find_text(context, "analyze_lint")
         config_field = self._find_text(context, "check_lint")

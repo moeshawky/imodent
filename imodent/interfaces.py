@@ -111,6 +111,9 @@ class Processor(ABC):
         """
         pass
 
+# Re-exports at module bottom: flattens namespace so callers can `from imodent import Finding, AnalysisContext` etc.
+# noqa: E402 suppresses import-not-at-top; F401 suppresses unused-import (these are re-exports, not consumed locally).
+# These lines are in the "do not remove" protected set per AGENTS.md.
 
 # Re-export analysis types for convenience
 from .analysis.findings import Finding, Severity, Location, FixOption, Advice, Change  # noqa: E402, F401

@@ -69,7 +69,7 @@ class Finding:
     lint_source: str | None = None
 
     # Evidence lifecycle
-    proof_state: str | None = None
+    proof_state: str | None = None  # Defaults to RAW; Ruff F401→PROVEN_UNUSED, F841→EXTERNALLY_VERIFIED
 
     @classmethod
     def create(

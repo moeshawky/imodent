@@ -33,6 +33,10 @@ class ProjectContext:
         return self.project_root / ".imodent" / "cache"
 
     def __post_init__(self):
+        """Auto-populates project_name from project_root if not explicitly set.
+        Calls _discover_project_name() which reads pyproject.toml or falls back
+        to the directory name.
+        """
         if not self.project_name:
             self.project_name = _discover_project_name(self.project_root)
 

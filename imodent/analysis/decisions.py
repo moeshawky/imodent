@@ -528,14 +528,16 @@ def _score_confidence(
         if lint_code == "F841":
             return 0.90
         if lint_code == "F401":
-            # Check if it's a package-local __init__.py re-export
-            if file.name == "__init__.py" and intent == "re_export":
-                return 0.10
             # Defense-in-depth: evidence-driven public_api_reexport detection
             for ev in evidence_list:
                 if ev.claim == "public_api_reexport" or ev.polarity == "context":
                     if ev.strength < 0.50:
                         return 0.10
+                if ev.kind == "ReExport" and ev.strength >= 0.60:
+                    return 0.15
+            # Check if it's a package-local __init__.py re-export
+            if file.name == "__init__.py" and intent == "re_export":
+                return 0.10
             return 0.85
 
     # AST-based unused import

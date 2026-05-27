@@ -18,6 +18,9 @@ class StrategyRegistry:
     """
 
     _strategies: Dict[str, Type[LanguageStrategy]] = {}
+    # Dual-index: _strategies maps name→class; _by_extension maps ".py"→class.
+    # Populated by register() which instantiates the class, reads name/extensions,
+    # and updates both indices. Used by get_by_extension() for filename-based lookup.
     _by_extension: Dict[str, Type[LanguageStrategy]] = {}
     _builtins_loaded: bool = False
 

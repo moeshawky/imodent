@@ -10,6 +10,8 @@ import shutil
 import sys
 from pathlib import Path
 
+# Registration imports: these modules register side-effect strategies/analyzers into global registries. Removing them breaks the registry. Also: StrategyRegistry, FixPipeline, ProjectContext, AnalysisCoordinator are actual runtime dependencies.
+
 # Registration side-effects (do not remove)
 from .pipeline import FixPipeline
 from .registry import StrategyRegistry
@@ -383,6 +385,12 @@ examples:
 
 
 def main():
+    """Entry point. Parses CLI args into argparse namespace, routes to either:
+    - fix_file() for FIX mode (default, backward-compatible path-based reformatting)
+    - analyze_files() for SCAN mode (any --analyze/--imports/--lint/--advisory/--fix/--report/--interactive/--confidence flag)
+    Routing decision: any scan flag → analyze; missing path → print usage; otherwise → fix.
+    fix_file() never returns a status code — exits 0 on all paths.
+    """
     parser = argparse.ArgumentParser(
         prog="imodent",
         description=DESCRIPTION,
@@ -497,6 +505,11 @@ def main():
     args = parser.parse_args()
 
     # ── Route to mode ────────────────────────────────────────────────────
+    # Any scan-mode flag triggers the analysis path. --fix without --analyze
+    # implies scan mode (analysis is the prerequisite for fixing).
+    # FIX-only flags (-r, --force) are silently accepted but warn when
+    # combined with scan mode, since scan is always recursive and skips
+    # unparseable files instead of forcing.
     scan_requested = (
         args.analyze
         or args.imports

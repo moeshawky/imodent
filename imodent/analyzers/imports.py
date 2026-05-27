@@ -17,7 +17,7 @@ from .base import Analyzer, AnalyzerCapability
 from ..analysis.context import AnalysisContext, FileInfo
 from ..analysis.evidence import Evidence
 from ..analysis.findings import Finding, Severity, Location
-from ..graph.imports import extract_imports, ImportInfo
+from ..graph.imports import extract_imports, ImportInfo, resolve_module_name
 
 
 # Files indicating public API re-export
@@ -240,7 +240,9 @@ def _import_binding_evidence(
     )
 
 
-def _is_reexport_candidate(imp: ImportInfo, file_path: Path) -> bool:
+def _is_reexport_candidate(
+    imp: ImportInfo, file_path: Path, context: AnalysisContext | None = None
+) -> bool:
     """Return whether an import is plausibly a package public API re-export."""
     if file_path.name == "interfaces.py":
         return True
@@ -252,6 +254,7 @@ def _is_reexport_candidate(imp: ImportInfo, file_path: Path) -> bool:
         return False
     if module_root in getattr(sys, "stdlib_module_names", set()):
         return False
+
     return True
 
 
@@ -260,6 +263,8 @@ def _detect_import_intent(
     content: str,
     file_path: Path,
     type_use_names: set[str] | None = None,
+    dunder_all_names: set[str] | None = None,
+    context: AnalysisContext | None = None,
 ) -> tuple[str, str, bool]:
     """
     Detect import intent and return (intent, reason, is_safe_to_remove).
@@ -282,8 +287,14 @@ def _detect_import_intent(
         if i < len(lines) and _PROTECTION_MARKERS.search(lines[i]):
             return "side_effect", "Protected by comment marker", False
 
+    # __all__ is a stronger re-export signal regardless of filename
+    if dunder_all_names:
+        name_to_check = imp.alias or imp.name or imp.module.split(".")[0] if imp.module else ""
+        if name_to_check in dunder_all_names:
+            return "re_export", f"Name '{name_to_check}' appears in __all__ export list", False
+
     # Check if in public API re-export file.
-    if filename in _RE_EXPORT_FILES and _is_reexport_candidate(imp, file_path):
+    if filename in _RE_EXPORT_FILES and _is_reexport_candidate(imp, file_path, context):
         return "re_export", "Public API re-export - do not remove", False
 
     # Check if typing module. This is intent only when the imported binding has
@@ -398,12 +409,16 @@ class ImportAnalyzer(Analyzer):
                     )
                 )
 
+            # Find redundant aliases
+            redundant_aliases = self._find_redundant_aliases(imports, path)
+            findings.extend(redundant_aliases)
+
             # Find duplicates (only module-level)
             duplicates = self._find_duplicates(imports, file_info.content)
             findings.extend(duplicates)
 
             # Find unused
-            unused = self._find_unused_in_file(file_info, imports)
+            unused = self._find_unused_in_file(file_info, imports, context)
             findings.extend(unused)
 
             # Check project-wide usage
@@ -427,7 +442,8 @@ class ImportAnalyzer(Analyzer):
                         continue
 
                     intent, reason, _ = _detect_import_intent(
-                        imp, file_info.content, path, type_use_names
+                        imp, file_info.content, path, type_use_names,
+                        context=context,
                     )
 
                     # Skip if intent indicates the import is intentionally used
@@ -504,8 +520,41 @@ class ImportAnalyzer(Analyzer):
 
         return findings
 
+    def _find_redundant_aliases(
+        self, imports: list[ImportInfo], file_path: Path
+    ) -> list[Finding]:
+        """Find redundant aliases where alias matches the bound name."""
+        findings = []
+        for imp in imports:
+            if imp.alias is None:
+                continue
+            bound_name = imp.name or imp.module.split(".")[0]
+            if imp.alias == bound_name:
+                findings.append(
+                    Finding.create(
+                        type="redundant_alias",
+                        severity=Severity.INFO,
+                        file=file_path,
+                        message=f"Redundant alias: '{bound_name} as {imp.alias}' in '{imp.import_statement}'",
+                        location=Location(line=imp.line),
+                        fixable=True,
+                        auto_fix_safe=True,
+                        import_name=imp.name,
+                        import_module=imp.module,
+                        data={
+                            "import_info": {
+                                "module": imp.module,
+                                "name": imp.name,
+                                "alias": imp.alias,
+                            }
+                        },
+                    )
+                )
+        return findings
+
     def _find_unused_in_file(
-        self, file_info: FileInfo, imports: list[ImportInfo]
+        self, file_info: FileInfo, imports: list[ImportInfo],
+        context: AnalysisContext | None = None,
     ) -> list[Finding]:
         """Find imports not used in the file."""
         findings = []
@@ -555,6 +604,9 @@ class ImportAnalyzer(Analyzer):
                         used_names.add(dec.id)
 
         # Check __all__ exports
+        # __all__ collection: iterates list/tuple elements in __all__ = [...] assignments.
+        # Names appearing in __all__ are excluded from unused-import detection.
+        # This catches explicit package re-export patterns but misses dynamic __all__.
         dunder_all_names = set()
         for node in ast.walk(file_info.ast_tree):
             if isinstance(node, ast.Assign):
@@ -580,8 +632,23 @@ class ImportAnalyzer(Analyzer):
             if not is_used:
                 # Cognitive detection
                 intent, intent_reason, auto_fix_safe = _detect_import_intent(
-                    imp, file_info.content, file_info.path, type_use_names
+                    imp, file_info.content, file_info.path, type_use_names, dunder_all_names,
+                    context,
                 )
+
+                # Project-graph verification for re-export intent
+                reexport_importers: list[str] = []
+                if intent == "re_export" and context is not None and context.project_root is not None:
+                    module_name = resolve_module_name(file_info.path, context.project_root)
+                    graph_importers = context.graph.get_importers(module_name)
+                    if not graph_importers:
+                        intent = "usage"
+                        intent_reason = (
+                            "Re-export file but no cross-file importers found in project graph"
+                        )
+                        auto_fix_safe = False
+                    else:
+                        reexport_importers = graph_importers
 
                 if intent in ("registration", "re_export", "typing", "side_effect", "try_block"):
                     finding_type = "import_intent"
@@ -595,6 +662,64 @@ class ImportAnalyzer(Analyzer):
                     message = f"Import '{imp.import_statement}' is not used in this file"
                     fixable = True
 
+                evidence_entries = [
+                    _import_binding_evidence(
+                        imp, file_info.path, name_to_check, intent
+                    ).to_dict()
+                ]
+                if intent == "re_export":
+                    evidence_entries.append(
+                        Evidence(
+                            kind="ReExport",
+                            file=file_info.path,
+                            location=Location(line=imp.line),
+                            source="ImportAnalyzer",
+                            subject=f"{imp.module}.{imp.name}",
+                            polarity="context",
+                            strength=0.60,
+                        ).to_dict()
+                    )
+                    evidence_entries.append(
+                        Evidence(
+                            kind="AllExport",
+                            file=file_info.path,
+                            location=Location(line=imp.line),
+                            source="ImportAnalyzer",
+                            subject=name_to_check,
+                            claim=(
+                                f"{name_to_check} appears in __all__ de facto package export"
+                                if name_to_check in dunder_all_names
+                                else f"{name_to_check} not in __all__"
+                            ),
+                            polarity=(
+                                "context" if name_to_check in dunder_all_names
+                                else "against"
+                            ),
+                            strength=(
+                                0.30 if name_to_check in dunder_all_names
+                                else 0.40
+                            ),
+                        ).to_dict()
+                    )
+                    if reexport_importers:
+                        evidence_entries.append(
+                            Evidence(
+                                kind="ProjectGraphImporters",
+                                file=file_info.path,
+                                location=Location(line=imp.line),
+                                source="ImportAnalyzer",
+                                subject=name_to_check,
+                                claim=(
+                                    f"Confirmed re-export: imported by "
+                                    f"{len(reexport_importers)} module(s) "
+                                    f"({', '.join(sorted(reexport_importers)[:5])}"
+                                    f"{'...' if len(reexport_importers) > 5 else ''})"
+                                ),
+                                polarity="context",
+                                strength=0.25,
+                            ).to_dict()
+                        )
+
                 findings.append(
                     Finding.create(
                         type=finding_type,
@@ -607,11 +732,7 @@ class ImportAnalyzer(Analyzer):
                         import_name=imp.name,
                         import_module=imp.module,
                         data={
-                            "evidence": [
-                                _import_binding_evidence(
-                                    imp, file_info.path, name_to_check, intent
-                                ).to_dict()
-                            ],
+                            "evidence": evidence_entries,
                             "import_info": {
                                 "module": imp.module,
                                 "name": imp.name,

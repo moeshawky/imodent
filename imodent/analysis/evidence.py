@@ -17,10 +17,19 @@ from .findings import Location
 if TYPE_CHECKING:
     from .decisions import SubjectKey
 
+# global monotonically-increasing counter seeded at 1.
+# itertools.count is thread-safe for next() but NOT for iteration.
+# Evidence.id assignment calls _next_evidence_id via field(default_factory=...),
+# which calls next() once per instance — safe unless instantiated concurrently.
 _EVIDENCE_ID_COUNTER = itertools.count(1)
 
 
 def _next_evidence_id() -> int:
+    """Returns the next integer from the global monotonic counter.
+
+    Called by Evidence.__init__ via field(default_factory=...) — each new
+    Evidence instance gets a unique incrementing id.
+    """
     return next(_EVIDENCE_ID_COUNTER)
 
 
@@ -34,10 +43,10 @@ class Evidence:
     source: str = ""
     subject: str = ""
     data: dict[str, Any] = field(default_factory=dict)
-    polarity: str = "context"
+    polarity: str = "context"  # "context"=neutral, "for"=supports, "against"=counters
     claim: str = ""
-    strength: float = 0.5
-    subject_key: SubjectKey | None = None
+    strength: float = 0.5  # Weight of this evidence (0.0–1.0), default 0.5 neutral
+    subject_key: SubjectKey | None = None  # TYPE_CHECKING only — not JSON-serializable
     id: int = field(default_factory=_next_evidence_id)
 
     def to_dict(self) -> dict[str, Any]:
