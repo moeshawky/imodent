@@ -206,14 +206,22 @@ class AnalysisCoordinator:
 
                 # Determine action based on mode
                 if mode == FixMode.SAFE_AUTO:
-                    if candidate is None or not candidate.destructive_allowed:
+                    if (
+                        candidate is None
+                        or candidate.requires_user_decision
+                        or not candidate.destructive_allowed
+                    ):
                         continue  # Skip
                     option = _destructive_option(fixer, routed_finding, context)
                     if not option:
                         continue
 
                 elif mode == FixMode.ALL_AUTO:
-                    if candidate is None or not candidate.destructive_allowed:
+                    if (
+                        candidate is None
+                        or candidate.requires_user_decision
+                        or not candidate.destructive_allowed
+                    ):
                         continue
                     option = _destructive_option(fixer, routed_finding, context)
                     if not option:
@@ -267,6 +275,8 @@ class AnalysisCoordinator:
             else None
         )
         for path in paths:
+            if path.is_symlink():
+                continue
             path = path.resolve()
             if path.is_file():
                 explicit_excluded = (
@@ -279,6 +289,8 @@ class AnalysisCoordinator:
                 for pattern in self.config.include_patterns:
                     for file_path in path.glob(pattern):
                         if not file_path.is_file():
+                            continue
+                        if file_path.is_symlink():
                             continue
                         file_path = file_path.resolve()
                         if not self._is_excluded(file_path, project_root):

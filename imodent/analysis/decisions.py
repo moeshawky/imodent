@@ -356,7 +356,11 @@ class DecisionEngine:
                         break
 
             # Score confidence
-            candidate.confidence = _score_confidence(rep, group, evidence_list)
+            candidate.confidence = _score_confidence(
+                rep,
+                group,
+                candidate.evidence_for + candidate.evidence_against,
+            )
             candidate.confidence_label = _compute_confidence_label(candidate.confidence)
             candidate.proof_state = _resolve_proof_state(rep, group)
 
@@ -562,6 +566,17 @@ def _score_confidence(
 def _destructive_allowed(candidate: DecisionCandidate, rep, group: list) -> bool:
     """Destructive edits require both high confidence AND explicit safety."""
     if candidate.confidence < 0.80:
+        return False
+
+    if candidate.proof_state in (
+        ProofState.REVIEW_REQUIRED.value,
+        ProofState.CONFLICTING_EVIDENCE.value,
+        ProofState.INSUFFICIENT_EVIDENCE.value,
+        "REVIEW_PUBLIC_API",
+    ):
+        return False
+
+    if any(_has_suppression_markers(finding) for finding in group):
         return False
 
     if candidate.issue_type == "duplicate_import" and any(

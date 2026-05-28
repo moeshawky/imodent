@@ -183,3 +183,21 @@ class TestReportModeIntegrity:
 
         bak = tmp_path / "test.py.bak"
         assert not bak.exists()
+
+    def test_dry_run_with_backup_does_not_create_bak(self, tmp_path, capsys):
+        """--dry-run with --backup is still a no-write mode."""
+        test_file = tmp_path / "test.py"
+        original = "import os\n\nx = 1\n"
+        test_file.write_text(original)
+
+        analyze_files(
+            paths=[test_file],
+            analyze_imports=True,
+            analyze_lint=True,
+            fix=True,
+            dry_run=True,
+            backup=True,
+        )
+
+        assert test_file.read_text() == original
+        assert not (tmp_path / "test.py.bak").exists()

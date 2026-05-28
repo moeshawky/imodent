@@ -1,6 +1,7 @@
 """Project-level configuration for imodent."""
 
 from pathlib import Path
+import sys
 from typing import Optional
 
 from ..analysis.context import AnalysisConfig
@@ -64,29 +65,63 @@ def load_config_from_pyproject(path: Path) -> Optional[dict]:
 def _apply_dict_to_config(config: AnalysisConfig, data: dict) -> AnalysisConfig:
     """Apply raw dict values to an AnalysisConfig instance."""
     if "check_imports" in data:
-        config.check_imports = bool(data["check_imports"])
+        config.check_imports = _coerce_bool(data["check_imports"], "check_imports", config.check_imports)
     if "check_syntax" in data:
-        config.check_syntax = bool(data["check_syntax"])
+        config.check_syntax = _coerce_bool(data["check_syntax"], "check_syntax", config.check_syntax)
     if "check_lint" in data:
-        config.check_lint = bool(data["check_lint"])
+        config.check_lint = _coerce_bool(data["check_lint"], "check_lint", config.check_lint)
     if "check_types" in data:
-        config.check_types = bool(data["check_types"])
+        config.check_types = _coerce_bool(data["check_types"], "check_types", config.check_types)
     if "auto_fix_safe" in data:
-        config.auto_fix_safe = bool(data["auto_fix_safe"])
+        config.auto_fix_safe = _coerce_bool(data["auto_fix_safe"], "auto_fix_safe", config.auto_fix_safe)
     if "auto_fix_all" in data:
-        config.auto_fix_all = bool(data["auto_fix_all"])
+        config.auto_fix_all = _coerce_bool(data["auto_fix_all"], "auto_fix_all", config.auto_fix_all)
     if "interactive" in data:
-        config.interactive = bool(data["interactive"])
+        config.interactive = _coerce_bool(data["interactive"], "interactive", config.interactive)
     if "include_patterns" in data:
-        config.include_patterns = list(data["include_patterns"])
+        config.include_patterns = _coerce_str_list(
+            data["include_patterns"], "include_patterns", config.include_patterns
+        )
     if "exclude_patterns" in data:
-        config.exclude_patterns = list(data["exclude_patterns"])
+        config.exclude_patterns = _coerce_str_list(
+            data["exclude_patterns"], "exclude_patterns", config.exclude_patterns
+        )
         config.exclude_patterns_from_config = True
     if "use_ruff" in data:
-        config.use_ruff = bool(data["use_ruff"])
+        config.use_ruff = _coerce_bool(data["use_ruff"], "use_ruff", config.use_ruff)
     if "use_pyright" in data:
-        config.use_pyright = bool(data["use_pyright"])
+        config.use_pyright = _coerce_bool(data["use_pyright"], "use_pyright", config.use_pyright)
     return config
+
+
+def _coerce_bool(value, field: str, default: bool) -> bool:
+    """Coerce config booleans without treating arbitrary strings as truthy."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    print(
+        f"Warning: invalid boolean for {field}: {value!r}. Using default {default!r}.",
+        file=sys.stderr,
+    )
+    return default
+
+
+def _coerce_str_list(value, field: str, default: list[str]) -> list[str]:
+    """Coerce path pattern config without splitting strings into characters."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    print(
+        f"Warning: invalid list for {field}: {value!r}. Using default.",
+        file=sys.stderr,
+    )
+    return default
 
 
 def load_config(project_root: Path) -> AnalysisConfig:

@@ -139,6 +139,22 @@ class LintAnalyzer(Analyzer):
                     data={"proof_state": "INSUFFICIENT_EVIDENCE"},
                 )
             ]
+        if not isinstance(diagnostics, list) or not all(
+            isinstance(item, dict) for item in diagnostics
+        ):
+            return [
+                Finding.create(
+                    type="lint_oracle_failed",
+                    severity=Severity.WARNING,
+                    file=_first_file(context),
+                    location=None,
+                    message="Ruff returned JSON in an unexpected shape.",
+                    fixable=False,
+                    auto_fix_safe=False,
+                    lint_source="ruff",
+                    data={"proof_state": "INSUFFICIENT_EVIDENCE"},
+                )
+            ]
 
         findings = []
         for diagnostic in diagnostics:

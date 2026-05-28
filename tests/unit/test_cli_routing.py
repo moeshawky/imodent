@@ -172,6 +172,50 @@ class TestFixFile:
             root_file.resolve(),
         ]
 
+    def test_check_mode_reports_original_validity(self, tmp_path, capsys):
+        """--check validates the current file instead of repairability."""
+        test_file = tmp_path / "bad.py"
+        test_file.write_text("def f():\npass\n")
+
+        fix_file(test_file, backup=False, check_only=True)
+
+        captured = capsys.readouterr()
+        assert captured.out.startswith("✗")
+        assert test_file.read_text() == "def f():\npass\n"
+
+    def test_recursive_fix_skips_symlink_targets(self, tmp_path):
+        """Directory fix must not write through a symlink outside the requested tree."""
+        src = tmp_path / "src"
+        src.mkdir()
+        victim = tmp_path / "victim.py"
+        victim.write_text("x=1\n")
+        link = src / "link.py"
+        try:
+            link.symlink_to(victim)
+        except OSError:
+            pytest.skip("symlinks unavailable")
+
+        fix_file(src, backup=True, recursive=True)
+
+        assert victim.read_text() == "x=1\n"
+        assert not victim.with_suffix(".py.bak").exists()
+
+    def test_backup_refuses_preexisting_symlink(self, tmp_path):
+        """Backup creation must not follow an attacker-controlled .bak symlink."""
+        test_file = tmp_path / "safe.py"
+        important = tmp_path / "important.py"
+        bak = tmp_path / "safe.py.bak"
+        test_file.write_text("x=1\n")
+        important.write_text("IMPORTANT\n")
+        try:
+            bak.symlink_to(important)
+        except OSError:
+            pytest.skip("symlinks unavailable")
+
+        fix_file(test_file, backup=True)
+
+        assert important.read_text() == "IMPORTANT\n"
+
 
 class TestAnalyzeFiles:
     """Test the analyze_files function."""
@@ -292,6 +336,20 @@ class TestAnalyzeFiles:
 
         captured = capsys.readouterr()
         assert "Findings: 0" in captured.out
+
+    def test_config_string_values_do_not_invert_user_intent(self, tmp_path):
+        """String config values are parsed by meaning, not Python truthiness."""
+        from imodent.project.config import load_config
+
+        (tmp_path / ".imodent.yaml").write_text(
+            'check_lint: "false"\nuse_ruff: "false"\ninclude_patterns: "*.py"\n'
+        )
+
+        config = load_config(tmp_path)
+
+        assert config.check_lint is False
+        assert config.use_ruff is False
+        assert config.include_patterns == ["*.py"]
 
     def test_lint_flag_does_not_disable_import_analysis(self, tmp_path, monkeypatch):
         """Passing --lint alone should not force analyze_imports=False.

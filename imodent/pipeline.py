@@ -34,7 +34,7 @@ class FixPipeline:
         """
         Detect the language for the given content.
 
-        Checks strategies in order: JSON, JSONL, Python (most specific first).
+        Checks strategies in order: JSON, JSONL, YAML, Python.
 
         Args:
             content: The source code content.
@@ -42,23 +42,13 @@ class FixPipeline:
         Returns:
             The detected LanguageStrategy, or None if no match.
         """
-        # Check JSON first (most specific - must parse successfully)
-        json_strategy = StrategyRegistry.get("json")
-        if json_strategy and json_strategy().detect(content):
-            self._strategy = json_strategy()
-            return self._strategy
-
-        # Check JSONL second (multiple lines of JSON)
-        jsonl_strategy = StrategyRegistry.get("jsonl")
-        if jsonl_strategy and jsonl_strategy().detect(content):
-            self._strategy = jsonl_strategy()
-            return self._strategy
-
-        # Check Python last (most general)
-        python_strategy = StrategyRegistry.get("python")
-        if python_strategy and python_strategy().detect(content):
-            self._strategy = python_strategy()
-            return self._strategy
+        # Extensionless content detection must check YAML before Python because
+        # plain key-value YAML can be valid Python annotation syntax.
+        for name in ("json", "jsonl", "yaml", "python"):
+            strategy_class = StrategyRegistry.get(name)
+            if strategy_class and strategy_class().detect(content):
+                self._strategy = strategy_class()
+                return self._strategy
 
         return None
 

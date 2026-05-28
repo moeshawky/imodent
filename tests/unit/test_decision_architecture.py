@@ -909,3 +909,72 @@ class TestRuffFixApplicability:
         assert len(candidates) == 1
         assert candidates[0].ruff_fix_applicability == "unsafe"
         assert candidates[0].destructive_allowed is True
+
+
+class TestCompoundDecisionGuards:
+    def test_public_api_review_blocks_safe_auto_deletion(self, tmp_path):
+        """REVIEW_PUBLIC_API requires a decision even when Ruff reports F401."""
+        package = tmp_path / "demo" / "pkg"
+        package.mkdir(parents=True)
+        init_file = package / "__init__.py"
+        init_file.write_text("from demo.pkg.public import Public\n")
+        (package / "public.py").write_text("class Public:\n    pass\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = False
+        project_context.config.check_lint = True
+        coordinator = AnalysisCoordinator(project_context=project_context)
+
+        result = coordinator.analyze([tmp_path])
+        candidate = result.candidates[0]
+
+        assert candidate.proof_state == "REVIEW_PUBLIC_API"
+        assert candidate.requires_user_decision is True
+        assert candidate.destructive_allowed is False
+        assert coordinator.fix(
+            result.findings,
+            result.context,
+            mode=FixMode.SAFE_AUTO,
+            candidates=result.candidates,
+        ) == {}
+
+    def test_cross_subject_context_evidence_does_not_downgrade_unrelated_f401(self, tmp_path):
+        """Context evidence for one import must not score unrelated candidates."""
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text("from pkg.public import Public\n")
+        (package / "public.py").write_text("class Public:\n    pass\n")
+        other = tmp_path / "other.py"
+        other.write_text("import os\n\nx = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = False
+        project_context.config.check_lint = True
+        result = AnalysisCoordinator(project_context=project_context).analyze([tmp_path])
+
+        other_candidate = next(c for c in result.candidates if c.subject_key.file == other)
+
+        assert other_candidate.confidence == 0.85
+        assert other_candidate.proof_state == "PROVEN_UNUSED"
+        assert other_candidate.destructive_allowed is True
+
+    def test_protected_duplicate_imports_do_not_become_destructive(self, tmp_path):
+        """Duplicate confidence must not override protected import intent."""
+        file_path = tmp_path / "sample.py"
+        file_path.write_text("# do not remove\nimport os\nimport os\n\nx = 1\n")
+
+        project_context = ProjectContext.from_root(tmp_path)
+        project_context.config.check_imports = True
+        project_context.config.check_lint = False
+        coordinator = AnalysisCoordinator(project_context=project_context)
+        result = coordinator.analyze([file_path])
+
+        assert any(f.type == "duplicate_import" for f in result.findings)
+        assert any(f.type == "import_intent" for f in result.findings)
+        assert all(not candidate.destructive_allowed for candidate in result.candidates)
+        assert coordinator.fix(
+            result.findings,
+            result.context,
+            mode=FixMode.SAFE_AUTO,
+            candidates=result.candidates,
+        ) == {}

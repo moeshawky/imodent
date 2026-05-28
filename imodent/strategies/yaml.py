@@ -86,7 +86,7 @@ class YAMLStrategy(LanguageStrategy):
             from ruamel.yaml import YAML
 
             yaml_obj = YAML()
-            yaml_obj.indent(mapping=indent_size, sequence=indent_size, offset=0)
+            yaml_obj.indent(mapping=indent_size, sequence=indent_size, offset=2)
             yaml_obj.preserve_quotes = True
 
             data = yaml_obj.load(content)

@@ -1,5 +1,6 @@
 """Tests for YAML strategy fallback paths and edge cases."""
 import pytest
+from imodent.pipeline import FixPipeline
 from imodent.strategies.yaml import YAMLStrategy
 
 
@@ -149,3 +150,9 @@ list:
         """Strategy should have correct extensions."""
         assert ".yaml" in self.strategy.extensions
         assert ".yml" in self.strategy.extensions
+
+    def test_pipeline_detects_yaml_before_python_annotations(self):
+        """Content detection should preserve the registered YAML capability."""
+        strategy = FixPipeline().detect("key: value\n")
+
+        assert isinstance(strategy, YAMLStrategy)

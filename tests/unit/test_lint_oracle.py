@@ -65,6 +65,32 @@ def test_lint_oracle_handles_invalid_json(monkeypatch, tmp_path):
     assert "invalid JSON" in findings[0].message
 
 
+def test_lint_oracle_handles_unexpected_json_shape(monkeypatch, tmp_path):
+    """Valid JSON with the wrong schema remains an oracle failure finding."""
+    file_path = tmp_path / "sample.py"
+    file_path.write_text("x = 1\n")
+    context = AnalysisContext(
+        files={file_path: FileInfo.from_path(file_path)},
+        config=AnalysisConfig(check_imports=False, check_lint=True),
+    )
+    monkeypatch.setattr(lint_module, "_ruff_command_prefix", lambda: ["ruff"])
+    monkeypatch.setattr(
+        lint_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout='{"diagnostics": []}',
+            stderr="",
+        ),
+    )
+
+    findings = LintAnalyzer().analyze(context)
+
+    assert len(findings) == 1
+    assert findings[0].type == "lint_oracle_failed"
+    assert "unexpected shape" in findings[0].message
+
+
 def test_lint_oracle_records_ruff_diagnostic_evidence(monkeypatch, tmp_path):
     """Ruff diagnostics become findings plus replayable evidence records."""
     file_path = tmp_path / "sample.py"

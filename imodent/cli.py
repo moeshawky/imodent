@@ -46,12 +46,15 @@ def _collect_targets(file_path: Path, recursive: bool = False) -> list[Path]:
     """Expand file/directory to list of processable files."""
     handled = {".py", ".pyw", ".pyi", ".json", ".jsonl", ".ndjson", ".yaml", ".yml"}
     if file_path.is_file():
+        if file_path.is_symlink():
+            return []
         return [file_path.resolve()]
     pattern = "**/*" if recursive else "*"
     return sorted(
         f.resolve()
         for f in file_path.glob(pattern)
         if f.is_file()
+        and not f.is_symlink()
         and f.suffix.lower() in handled
         and not is_generated_artifact(f.resolve())
     )
@@ -65,13 +68,14 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         print(f"✗ {file_path}: {e}")
         return
 
-    result = pipeline.fix(content, strategy=_strategy_for_path(file_path), force=force)
-
     if check_only:
+        result = pipeline.validate(content, strategy=_strategy_for_path(file_path))
         print(f"{'✓' if result.success else '✗'} {file_path}")
         for err in result.errors:
             print(f" → {err}")
         return
+
+    result = pipeline.fix(content, strategy=_strategy_for_path(file_path), force=force)
 
     if dry_run:
         print(f"\n--- {file_path} ---")
@@ -99,6 +103,9 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         ".yml",
     }:
         bak = file_path.with_suffix(file_path.suffix + ".bak")
+        if bak.is_symlink():
+            print(f"✗ {file_path}: refusing to write backup through symlink: {bak}")
+            return
         try:
             shutil.copy2(file_path, bak)
         except Exception as e:
@@ -260,20 +267,24 @@ def analyze_files(
                 for err in fix_result.errors:
                     print(f"  → {err}")
                 continue
-            if backup and fix_mode != FixMode.REPORT:
-                bak = file_path.with_suffix(file_path.suffix + ".bak")
-                try:
-                    shutil.copy2(file_path, bak)
-                except Exception as e:
-                    print(f" ✗ {file_path}")
-                    print(f"  → could not create backup: {e}")
-                    continue
-                print(f" ↳ backup → {bak}")
             if dry_run or fix_mode == FixMode.REPORT:
                 tag = "dry-run" if dry_run else "review"
                 print(f" ~ {file_path} ({tag})")
                 print(fix_result.content[:500])
             else:
+                if backup:
+                    bak = file_path.with_suffix(file_path.suffix + ".bak")
+                    if bak.is_symlink():
+                        print(f" ✗ {file_path}")
+                        print(f"  → refusing to write backup through symlink: {bak}")
+                        continue
+                    try:
+                        shutil.copy2(file_path, bak)
+                    except Exception as e:
+                        print(f" ✗ {file_path}")
+                        print(f"  → could not create backup: {e}")
+                        continue
+                    print(f" ↳ backup → {bak}")
                 try:
                     file_path.write_text(fix_result.content, encoding="utf-8")
                 except Exception as e:
