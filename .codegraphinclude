@@ -1,2 +1,35 @@
+# === SOURCE CODE ===
 imodent/
+
+# === TESTS ===
 tests/
+
+# === EXCLUSIONS ===
+# Design docs — specifications, not source
+!design/
+
+# Build artifacts
+!build/
+!imodent.egg-info/
+!*.egg-info/
+
+# Audit reports — generated documentation
+!AUDIT_REPORT.md
+!CBP_V2_AUDIT_REPORT.md
+!CHAIN_BUG_REPORT.md
+!CLI_AUDIT_REPORT.md
+!COMPLETE_FINDINGS.md
+!COMPOUNDED_BUG_PROTOCOL.md
+!COMPOUNDED_BUG_PROTOCOL_v2.md
+!COMPOUNDED_BUG_PROTOCOL_v2_RUN.md
+!HIVEMIND_CBP_v2.md
+!IMODENT_DECISION_ARCHITECTURE_PLAN.md
+!IMPLEMENTATION_HANDOFF_PROMPT.md
+!IMPLEMENTATION_REPORT.md
+!IMPLEMENTATION_REPORT_PASS_2.md
+!NEXT_DELEGATION_PROMPT.md
+!PREPUBLISH_AUDIT_FINAL.md
+!PREPUBLISH_AUDIT_REPORT.md
+!ROOT_CAUSE_ANALYSIS.md
+!prompt.md
+!pr-pub-ses.md

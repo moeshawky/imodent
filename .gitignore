@@ -61,3 +61,7 @@ ROOT_CAUSE_ANALYSIS.md
 
 # AI annotation proposals (RNA layer — reviewed before applying as DNA)
 .annotations/
+
+# Local ix watcher state
+.ix/codegraph_sync_state.json
+.ix/*.delta
