@@ -8,7 +8,13 @@ SCAN — multi-file analysis: imports, lint, architecture (--analyze)
 import argparse
 import shutil
 import sys
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
+
+try:
+    __version__ = _pkg_version("imodent")
+except PackageNotFoundError:
+    __version__ = "0.0.0dev"
 
 # Registration imports: these modules register side-effect strategies/analyzers into global registries. Removing them breaks the registry. Also: StrategyRegistry, FixPipeline, ProjectContext, AnalysisCoordinator are actual runtime dependencies.
 
@@ -412,7 +418,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version="imodent 1.0.0a1",
+        version=f"imodent {__version__}",
         help="show version and exit",
     )
 

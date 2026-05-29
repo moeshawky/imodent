@@ -1,0 +1,36 @@
+include LICENSE
+include README.md
+include pyproject.toml
+
+recursive-exclude tests *
+recursive-exclude build *
+recursive-exclude .annotations *
+recursive-exclude .codegraph *
+recursive-exclude .ix *
+recursive-exclude design *
+recursive-exclude docs *
+recursive-exclude .antigravitycli *
+
+exclude nexus.zip
+exclude ses.txt
+exclude prompt.md
+exclude pr-pub-ses.md
+exclude .coverage
+exclude AGENTS.md
+exclude AUDIT_REPORT.md
+exclude CBP_V2_AUDIT_REPORT.md
+exclude CHAIN_BUG_REPORT.md
+exclude CLI_AUDIT_REPORT.md
+exclude COMPLETE_FINDINGS.md
+exclude COMPOUNDED_BUG_PROTOCOL.md
+exclude COMPOUNDED_BUG_PROTOCOL_v2.md
+exclude COMPOUNDED_BUG_PROTOCOL_v2_RUN.md
+exclude HIVEMIND_CBP_v2.md
+exclude IMODENT_DECISION_ARCHITECTURE_PLAN.md
+exclude IMPLEMENTATION_HANDOFF_PROMPT.md
+exclude IMPLEMENTATION_REPORT.md
+exclude IMPLEMENTATION_REPORT_PASS_2.md
+exclude NEXT_DELEGATION_PROMPT.md
+exclude PREPUBLISH_AUDIT_FINAL.md
+exclude PREPUBLISH_AUDIT_REPORT.md
+exclude ROOT_CAUSE_ANALYSIS.md
