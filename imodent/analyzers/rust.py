@@ -73,7 +73,8 @@ class RustAnalyzer(Analyzer):
             )
 
         for root in cargo_roots:
-            findings.extend(_scan_cargo_root(context, root))
+            ws_root = context.project_root if context.project_root in cargo_roots else None
+            findings.extend(_scan_cargo_root(context, root, workspace_root=ws_root))
 
         if context.config.run_cargo or context.config.run_cargo_check:
             for root in cargo_roots:
@@ -159,86 +160,190 @@ _RESIDUE_MARKERS = {
     "panic!": "panic!",
 }
 
+_UNSAFE_NO_SAFETY_RE = re.compile(r"unsafe\s*\{")
+_SAFETY_COMMENT_RE = re.compile(r"//\s*SAFETY:")
+_UNWRAP_RE = re.compile(r"\.(?:unwrap|expect)\s*\(")
+
 
 def _scan_cargo_root(
     context: AnalysisContext,
     root: Path,
+    workspace_root: Path | None = None,
 ) -> list[Finding]:
-    """Scan a Cargo root for config advisory findings."""
-    findings: list[Finding] = []
-    cargo_toml_path = root / "Cargo.toml"
-    clippy_toml_path = root / "clippy.toml"
-    rustfmt_toml_path = root / "rustfmt.toml"
+    """Scan a Cargo root for config advisory findings.
 
+    If workspace_root is provided and differs from root, this is a workspace member
+    — skip config checks that are inherited from the workspace root.
+    """
+    findings: list[Finding] = []
+    is_workspace_member = workspace_root is not None and workspace_root != root
+    cargo_toml_path = root / "Cargo.toml"
     cargo_content = _read_file(cargo_toml_path)
-    clippy_exists = clippy_toml_path.exists() or clippy_toml_path in context.files
-    rustfmt_exists = rustfmt_toml_path.exists() or rustfmt_toml_path in context.files
+
+    # Determine what the workspace root has for config inheritance
+    ws_cargo_content = None
+    ws_has_clippy = False
+    if workspace_root and workspace_root != root:
+        ws_cargo = workspace_root / "Cargo.toml"
+        ws_cargo_content = _read_file(ws_cargo)
+        if ws_cargo_content:
+            ws_has_clippy = "clippy" in ws_cargo_content.lower() and "[lints" in ws_cargo_content.lower()
+        # Check for clippy.toml at workspace root
+        if not ws_has_clippy:
+            ws_has_clippy = (workspace_root / "clippy.toml").exists()
 
     # 5.1 Lint policy missing
-    has_lint_policy = False
-    if cargo_content is not None:
-        has_lint_policy = (
-            "[lints]" in cargo_content
-            or "[workspace.lints]" in cargo_content
-            or "[workspace.lints." in cargo_content
-            or "[lints." in cargo_content
-        )
-
-    if not has_lint_policy:
-        findings.append(
-            Finding.create(
-                type="rust_lint_policy_missing",
-                severity=Severity.INFO,
-                file=cargo_toml_path if cargo_toml_path.exists() else root / "Cargo.toml",
-                message=(
-                    "No [lints] or [workspace.lints] section in Cargo.toml. "
-                    "Consider defining an explicit Rust/Clippy lint policy."
-                ),
-                fixable=False,
-                auto_fix_safe=False,
-                data={"proof_state": "RAW"},
+    if not is_workspace_member:
+        has_lint_policy = False
+        if cargo_content is not None:
+            has_lint_policy = (
+                "[lints]" in cargo_content
+                or "[workspace.lints]" in cargo_content
+                or "[workspace.lints." in cargo_content
+                or "[lints." in cargo_content
             )
-        )
 
-    # 5.2 Clippy config missing
-    has_clippy_policy = clippy_exists
-    if not has_clippy_policy and cargo_content is not None:
-        has_clippy_policy = "clippy" in cargo_content.lower() and "[lints" in cargo_content.lower()
-
-    if not has_clippy_policy:
-        findings.append(
-            Finding.create(
-                type="rust_clippy_config_missing",
-                severity=Severity.HINT,
-                file=clippy_toml_path if clippy_exists else (root / "clippy.toml"),
-                message=(
-                    "No clippy.toml or Clippy lint policy found. "
-                    "Consider adding clippy.toml or [workspace.lints.clippy] in Cargo.toml."
-                ),
-                fixable=False,
-                auto_fix_safe=False,
-                data={"proof_state": "RAW"},
+        if not has_lint_policy:
+            findings.append(
+                Finding.create(
+                    type="rust_lint_policy_missing",
+                    severity=Severity.INFO,
+                    file=cargo_toml_path if cargo_toml_path.exists() else root / "Cargo.toml",
+                    message=(
+                        "No [lints] or [workspace.lints] section in Cargo.toml. "
+                        "Consider defining an explicit Rust/Clippy lint policy."
+                    ),
+                    fixable=False,
+                    auto_fix_safe=False,
+                    data={"proof_state": "RAW"},
+                )
             )
-        )
 
-    # 5.3 Rustfmt config missing
-    if not rustfmt_exists:
-        findings.append(
-            Finding.create(
-                type="rust_rustfmt_config_missing",
-                severity=Severity.HINT,
-                file=root / "rustfmt.toml",
-                message=(
-                    "No rustfmt.toml found. Rustfmt defaults are valid, "
-                    "but an explicit config helps teams enforce consistent style."
-                ),
-                fixable=False,
-                auto_fix_safe=False,
-                data={"proof_state": "RAW"},
+    # 5.2 Clippy config missing (skip for workspace members inheriting from root)
+    if not is_workspace_member:
+        clippy_toml_path = root / "clippy.toml"
+        clippy_exists = clippy_toml_path.exists() or clippy_toml_path in context.files
+        has_clippy_policy = clippy_exists
+        if not has_clippy_policy and cargo_content is not None:
+            has_clippy_policy = "clippy" in cargo_content.lower() and "[lints" in cargo_content.lower()
+
+        if not has_clippy_policy:
+            findings.append(
+                Finding.create(
+                    type="rust_clippy_config_missing",
+                    severity=Severity.HINT,
+                    file=clippy_toml_path if clippy_exists else (root / "clippy.toml"),
+                    message=(
+                        "No clippy.toml or Clippy lint policy found. "
+                        "Consider adding clippy.toml or [workspace.lints.clippy] in Cargo.toml."
+                    ),
+                    fixable=False,
+                    auto_fix_safe=False,
+                    data={"proof_state": "RAW"},
+                )
             )
-        )
 
-    # 5.4 Broad allow in .rs source
+    # 5.3 Rustfmt config missing (skip for workspace members inheriting from root)
+    if not is_workspace_member:
+        rustfmt_toml_path = root / "rustfmt.toml"
+        rustfmt_exists = rustfmt_toml_path.exists() or rustfmt_toml_path in context.files
+        if not rustfmt_exists:
+            findings.append(
+                Finding.create(
+                    type="rust_rustfmt_config_missing",
+                    severity=Severity.HINT,
+                    file=root / "rustfmt.toml",
+                    message=(
+                        "No rustfmt.toml found. Rustfmt defaults are valid, "
+                        "but an explicit config helps teams enforce consistent style."
+                    ),
+                    fixable=False,
+                    auto_fix_safe=False,
+                    data={"proof_state": "RAW"},
+                )
+            )
+
+    # 5.4 Tooling checks (skip for workspace members — config is at root)
+    if not is_workspace_member:
+        # rust-toolchain.toml
+        toolchain_path = root / "rust-toolchain.toml"
+        if not toolchain_path.exists() and not (root / "rust-toolchain").exists():
+            findings.append(
+                Finding.create(
+                    type="rust_toolchain_missing",
+                    severity=Severity.HINT,
+                    file=root / "rust-toolchain.toml",
+                    message=(
+                        "No rust-toolchain.toml found. Pinning the Rust toolchain "
+                        "ensures reproducible builds across environments."
+                    ),
+                    fixable=False,
+                    auto_fix_safe=False,
+                    data={"proof_state": "RAW"},
+                )
+            )
+
+        # cargo-deny
+        deny_toml = root / "deny.toml"
+        if not deny_toml.exists() and not (root / "deny.lock").exists():
+            findings.append(
+                Finding.create(
+                    type="rust_cargo_deny_missing",
+                    severity=Severity.HINT,
+                    file=deny_toml,
+                    message=(
+                        "No deny.toml found. cargo-deny checks licenses, "
+                        "advisories, and duplicate dependencies."
+                    ),
+                    fixable=False,
+                    auto_fix_safe=False,
+                    data={"proof_state": "RAW"},
+                )
+            )
+
+        # cargo-machete
+        has_machete = False
+        if cargo_content and "cargo-machete" in cargo_content.lower():
+            has_machete = True
+        if not has_machete:
+            findings.append(
+                Finding.create(
+                    type="rust_cargo_machete_missing",
+                    severity=Severity.HINT,
+                    file=cargo_toml_path,
+                    message=(
+                        "No cargo-machete reference found. "
+                        "cargo-machete detects unused dependencies."
+                    ),
+                    fixable=False,
+                    auto_fix_safe=False,
+                    data={"proof_state": "RAW"},
+                )
+            )
+
+        # Release profile tuning
+        if cargo_content:
+            has_release_profile = (
+                "[profile.release]" in cargo_content
+                or "[profile.dist]" in cargo_content
+            )
+            if not has_release_profile:
+                findings.append(
+                    Finding.create(
+                        type="rust_release_profile_missing",
+                        severity=Severity.HINT,
+                        file=cargo_toml_path,
+                        message=(
+                            "No [profile.release] or [profile.dist] found. "
+                            "Consider tuning LTO, codegen-units, and strip for smaller binaries."
+                        ),
+                        fixable=False,
+                        auto_fix_safe=False,
+                        data={"proof_state": "RAW"},
+                    )
+                )
+
+    # 5.5 Broad allow in .rs source
     rust_files = [
         path
         for path, fi in context.files.items()
@@ -325,6 +430,47 @@ def _scan_cargo_root(
                             data={"proof_state": "RAW"},
                         )
                     )
+
+            # 5.6 unsafe without SAFETY comment (skip test/example files)
+            if not in_test_context and _UNSAFE_NO_SAFETY_RE.search(stripped):
+                # Check if the NEXT non-empty line has a SAFETY comment
+                has_safety = False
+                lines = content.splitlines()
+                for future_idx in range(line_no, min(line_no + 3, len(lines))):
+                    future_line = lines[future_idx].strip()
+                    if future_line and _SAFETY_COMMENT_RE.search(future_line):
+                        has_safety = True
+                        break
+                    if future_line and future_line != stripped:
+                        break  # Non-empty, non-matching line — no SAFETY comment
+                if not has_safety:
+                    findings.append(
+                        Finding.create(
+                            type="rust_unsafe_no_safety",
+                            severity=Severity.WARNING,
+                            file=rs_path,
+                            location=Location(line=line_no),
+                            message="unsafe block without // SAFETY: comment. Add a SAFETY comment explaining why this is safe.",
+                            fixable=False,
+                            auto_fix_safe=False,
+                            data={"proof_state": "RAW"},
+                        )
+                    )
+
+            # 5.7 unwrap() in library code (skip test/example/bench files)
+            if not in_test_context and _UNWRAP_RE.search(stripped):
+                findings.append(
+                    Finding.create(
+                        type="rust_unwrap_in_library",
+                        severity=Severity.WARNING,
+                        file=rs_path,
+                        location=Location(line=line_no),
+                        message="unwrap() or expect() in library code. Use error handling (Result/Option) instead.",
+                        fixable=False,
+                        auto_fix_safe=False,
+                        data={"proof_state": "RAW"},
+                    )
+                )
 
     return findings
 

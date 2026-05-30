@@ -1007,9 +1007,10 @@ class TestWorkspaceDiscovery:
             project_root=tmp_path,
         )
         findings = RustAnalyzer().analyze(context)
-        # Should find lint policy missing for BOTH root and member
+        # Should find lint policy missing for ROOT only — members inherit from root
         lint_missing = [f for f in findings if f.type == "rust_lint_policy_missing"]
-        assert len(lint_missing) >= 2
+        assert len(lint_missing) == 1
+        assert lint_missing[0].file == tmp_path / "Cargo.toml"
 
     def test_workspace_without_members_is_handled(self, tmp_path):
         """Workspace with no members section doesn't crash."""
