@@ -380,7 +380,7 @@ class DecisionEngine:
             key = sk.binding_key if sk else (f.file.resolve(), f.type, f.id)
             grouped.setdefault(key, []).append(f)
 
-        for key, group in grouped.items():
+        for _key, group in grouped.items():
             rep = group[0]
             sk = _subject_key_from_finding(rep)
             if sk is None:

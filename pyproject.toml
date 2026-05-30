@@ -39,8 +39,12 @@ imodent = "imodent.cli:main"
 
 [project.optional-dependencies]
 dev = [
+    "coverage>=7.0",
+    "pre-commit>=4.0",
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
 ]
 
 [tool.setuptools.packages.find]
@@ -50,7 +54,49 @@ include = ["imodent*"]
 [tool.setuptools.package-data]
 imodent = ["py.typed"]
 
+# ── Ruff (linter) ───────────────────────────────────────
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",      # pycodestyle errors + warnings
+    "F",           # pyflakes (undefined names, unused imports)
+    "B",           # flake8-bugbear (common bug patterns)
+]
+ignore = ["E501"]  # line length handled by formatter (project uses long docstrings)
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]       # allow assert in tests
+"__init__.py" = ["F401"]         # allow unused imports in __init__ (re-exports)
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ── pytest ──────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v"
+addopts = "-ra -q --strict-markers --tb=short"
+
+# ── coverage ────────────────────────────────────────────
+[tool.coverage.run]
+source = ["imodent"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]
