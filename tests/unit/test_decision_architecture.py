@@ -385,7 +385,7 @@ class TestReviewPublicApiGate:
             confidence_label="high",
             proof_state="REVIEW_PUBLIC_API",
         )
-        assert _requires_decision(candidate, None, []) is True
+        assert _requires_decision(candidate, []) is True
 
     def test_confidence_0_10_from_context_evidence(self):
         from imodent.analysis.decisions import _score_confidence

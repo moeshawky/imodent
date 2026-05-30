@@ -388,9 +388,10 @@ class ImportAnalyzer(Analyzer):
                 continue
 
             imports = extract_imports(file_info.content, path)
+            has_annotations = _has_type_annotations(file_info.ast_tree)
             type_use_names = (
                 _collect_type_use_names(file_info.ast_tree)
-                if file_info.ast_tree is not None
+                if has_annotations
                 else set()
             )
             for imp in imports:

@@ -11,7 +11,7 @@ import sys
 import time
 
 from .context import AnalysisContext, AnalysisConfig, FileInfo
-from .findings import Finding, FixOption, ProofState
+from .findings import Finding, FixOption, ProofState, Severity
 from .decisions import (
     DecisionCandidate,
     DecisionEngine,
@@ -123,6 +123,36 @@ class AnalysisCoordinator:
                 print(f"Warning: Analyzer {analyzer.name} failed: {e}")
 
         all_findings = _deduplicate_findings(all_findings)
+
+        # Syntax check (gated by config.check_syntax)
+        if self.config.check_syntax:
+            for path, file_info in file_infos.items():
+                if file_info.has_syntax_errors:
+                    all_findings.append(Finding.create(
+                        type="syntax_error",
+                        severity=Severity.ERROR,
+                        file=path,
+                        message=f"{path.name}: contains syntax errors",
+                        fixable=False,
+                        auto_fix_safe=False,
+                        proof_state=ProofState.PROVEN_UNUSED.value,
+                    ))
+
+        # Type checking (gated by config.check_types / config.use_pyright)
+        if self.config.check_types:
+            from ..analyzers.types import check_mypy
+            try:
+                all_findings.extend(check_mypy(context))
+            except Exception:
+                pass
+
+        if self.config.use_pyright:
+            from ..analyzers.types import check_pyright
+            try:
+                all_findings.extend(check_pyright(context))
+            except Exception:
+                pass
+
         self._initialize_proof_states(all_findings)
         context.findings = all_findings
 

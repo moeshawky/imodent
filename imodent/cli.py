@@ -119,6 +119,9 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
             return
         print(f" ↳ backup → {bak}")
 
+    if file_path.is_symlink():
+        print(f"✗ {file_path}: refusing to write through symlink")
+        return
     try:
         file_path.write_text(result.content, encoding="utf-8")
     except Exception as e:
@@ -132,20 +135,8 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
 
 
 def _strategy_for_path(file_path: Path):
-    """Prefer extension-specific strategy when a known file suffix is present."""
-    by_suffix = {
-        ".py": "python",
-        ".pyw": "python",
-        ".pyi": "python",
-        ".json": "json",
-        ".jsonl": "jsonl",
-        ".ndjson": "jsonl",
-        ".yaml": "yaml",
-        ".yml": "yaml",
-    }
-    name = by_suffix.get(file_path.suffix.lower())
-    strategy = StrategyRegistry.get(name) if name else None
-    return strategy() if strategy else None
+    strategy_class = StrategyRegistry.get_by_extension(file_path.suffix.lower())
+    return strategy_class() if strategy_class else None
 
 
 # ---------------------------------------------------------------------------
@@ -252,20 +243,22 @@ def analyze_files(
                 print(f"  Risk: {advice.impact}")
 
     # ── Determine fix mode ────────────────────────────────────────────────
-    if report:
-        fix_mode = FixMode.REPORT
-        print("\n" + "━" * 60)
-        print("REVIEW MODE — no files modified")
-        print("━" * 60)
-    elif interactive:
+    config = project_context.config
+    if interactive or config.interactive:
         fix_mode = FixMode.INTERACTIVE
         print("\n" + "━" * 60)
         print("INTERACTIVE MODE — prompt before each fix")
         print("━" * 60)
-    elif fix and not check_only:
-        fix_mode = FixMode.SAFE_AUTO
+    elif report:
+        fix_mode = FixMode.REPORT
         print("\n" + "━" * 60)
-        print("AUTO-FIX MODE — safe fixes only")
+        print("REVIEW MODE — no files modified")
+        print("━" * 60)
+    elif fix and not check_only:
+        fix_mode = FixMode.ALL_AUTO if config.auto_fix_all else FixMode.SAFE_AUTO
+        print("\n" + "━" * 60)
+        print("AUTO-FIX MODE — safe fixes only" if fix_mode == FixMode.SAFE_AUTO
+              else "AUTO-FIX MODE — all fixes")
         print("━" * 60)
     else:
         fix_mode = None
@@ -308,6 +301,10 @@ def analyze_files(
                         print(f"  → could not create backup: {e}")
                         continue
                     print(f" ↳ backup → {bak}")
+                if file_path.is_symlink():
+                    print(f" ✗ {file_path}")
+                    print("  → refusing to write through symlink")
+                    continue
                 try:
                     file_path.write_text(fix_result.content, encoding="utf-8")
                 except Exception as e:

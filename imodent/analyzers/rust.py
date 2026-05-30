@@ -287,8 +287,12 @@ def _scan_cargo_root(
             continue
         # Skip test files and examples for residue markers — these are expected there
         rel = str(rs_path.relative_to(root)) if _is_under_root(rs_path, root) else str(rs_path)
+        rel_parts = set(rel.split("/"))
         is_test_or_example = (
-            "/tests/" in rel
+            "tests" in rel_parts
+            or "examples" in rel_parts
+            or "benches" in rel_parts
+            or "/tests/" in rel
             or "/examples/" in rel
             or "/benches/" in rel
             or rs_path.name.startswith("test_")
@@ -545,8 +549,12 @@ def _parse_cargo_json_output(
 
 
 def _read_file(path: Path) -> str | None:
-    """Read a file, returning None on failure."""
     try:
+        if path.is_symlink() or path.is_fifo() or path.is_socket():
+            return None
+        size = path.stat().st_size
+        if size > 10_000_000:
+            return None
         return path.read_text(encoding="utf-8")
     except Exception:
         return None

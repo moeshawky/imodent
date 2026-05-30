@@ -240,3 +240,84 @@ def test_lint_oracle_suppresses_package_init_reexport_f401(monkeypatch, tmp_path
     assert pkg_finding.data["proof_state"] == "REVIEW_PUBLIC_API"
     # Evidence context distinguishes the package-local re-export.
     assert len(pkg_finding.data["evidence"]) == 2  # primary + context
+
+
+# ---------------------------------------------------------------------------
+# Lint oracle error paths
+# ---------------------------------------------------------------------------
+
+
+def test_lint_oracle_handles_oserror(monkeypatch, tmp_path):
+    """Ruff OSError produces lint_oracle_failed, not a crash."""
+    file_path = tmp_path / "sample.py"
+    file_path.write_text("x = 1\n")
+    context = AnalysisContext(
+        files={file_path: FileInfo.from_path(file_path)},
+        config=AnalysisConfig(check_imports=False, check_lint=True),
+    )
+    monkeypatch.setattr(lint_module, "_ruff_command_prefix", lambda: ["ruff"])
+    monkeypatch.setattr(
+        lint_module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("permission denied")),
+    )
+
+    findings = LintAnalyzer().analyze(context)
+
+    assert len(findings) == 1
+    assert findings[0].type == "lint_oracle_failed"
+    assert "could not run" in findings[0].message
+    assert findings[0].data["proof_state"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_lint_oracle_handles_non_standard_exit_code(monkeypatch, tmp_path):
+    """Ruff exit code 2+ produces lint_oracle_failed with returncode."""
+    file_path = tmp_path / "sample.py"
+    file_path.write_text("x = 1\n")
+    context = AnalysisContext(
+        files={file_path: FileInfo.from_path(file_path)},
+        config=AnalysisConfig(check_imports=False, check_lint=True),
+    )
+    monkeypatch.setattr(lint_module, "_ruff_command_prefix", lambda: ["ruff"])
+    monkeypatch.setattr(
+        lint_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=2,
+            stdout="",
+            stderr="ruff: error while selecting files",
+        ),
+    )
+
+    findings = LintAnalyzer().analyze(context)
+
+    assert len(findings) == 1
+    assert findings[0].type == "lint_oracle_failed"
+    assert findings[0].data["returncode"] == 2
+    assert "error while selecting files" in findings[0].message
+
+
+def test_lint_oracle_handles_non_standard_exit_code_no_stderr(monkeypatch, tmp_path):
+    """Ruff exit code 2 with empty stderr uses default message."""
+    file_path = tmp_path / "sample.py"
+    file_path.write_text("x = 1\n")
+    context = AnalysisContext(
+        files={file_path: FileInfo.from_path(file_path)},
+        config=AnalysisConfig(check_imports=False, check_lint=True),
+    )
+    monkeypatch.setattr(lint_module, "_ruff_command_prefix", lambda: ["ruff"])
+    monkeypatch.setattr(
+        lint_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=2,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+    findings = LintAnalyzer().analyze(context)
+
+    assert len(findings) == 1
+    assert findings[0].type == "lint_oracle_failed"
+    assert "status 2" in findings[0].message

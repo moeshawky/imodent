@@ -427,10 +427,10 @@ class DecisionEngine:
             # Determine actions and safety
             candidate.suggested_actions = _default_actions_for_issue_type(issue_type)
             candidate.destructive_allowed = _destructive_allowed(
-                candidate, rep, group
+                candidate, group
             )
             candidate.requires_user_decision = _requires_decision(
-                candidate, rep, group
+                candidate, group
             )
 
             candidates.append(candidate)
@@ -655,7 +655,7 @@ def _score_confidence(
     return 0.50
 
 
-def _destructive_allowed(candidate: DecisionCandidate, rep, group: list) -> bool:
+def _destructive_allowed(candidate: DecisionCandidate, group: list) -> bool:
     """Destructive edits require both high confidence AND explicit safety."""
     # Rust findings are never destructive
     if candidate.issue_type in (
@@ -693,7 +693,7 @@ def _destructive_allowed(candidate: DecisionCandidate, rep, group: list) -> bool
 
 
 def _requires_decision(
-    candidate: DecisionCandidate, rep, group: list
+    candidate: DecisionCandidate, group: list
 ) -> bool:
     """Ambiguous candidates require user/agent decision."""
     if candidate.confidence_label in ("low", "medium"):

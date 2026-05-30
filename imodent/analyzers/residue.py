@@ -41,6 +41,20 @@ class ResidueAnalyzer(Analyzer):
             if lint_finding is not None:
                 findings.append(lint_finding)
 
+            residue_markers = self._find_regex(
+                context, r"#\s*(TODO|FIXME|HACK)\b"
+            )
+            if residue_markers:
+                findings.append(Finding.create(
+                    type="residue_marker",
+                    severity=Severity.INFO,
+                    file=residue_markers[0],
+                    location=Location(line=residue_markers[1]),
+                    message=f"Residue marker: {residue_markers[2]}",
+                    fixable=False,
+                    auto_fix_safe=False,
+                ))
+
         return findings
 
     def _find_declared_lint_without_executor(
