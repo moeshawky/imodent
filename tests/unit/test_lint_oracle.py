@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from imodent.analysis.context import AnalysisConfig, AnalysisContext, FileInfo
+from imodent.analysis.findings import Severity
 from imodent.analyzers import lint as lint_module
 from imodent.analyzers.lint import LintAnalyzer
 
@@ -125,6 +126,39 @@ def test_lint_oracle_records_ruff_diagnostic_evidence(monkeypatch, tmp_path):
     assert findings[0].data["proof_state"] == "PROVEN_UNUSED"
     assert len(context.evidence) == 1
     assert context.evidence[0].kind == "RuffDiagnostic"
+
+
+def test_f541_fstring_without_placeholder_is_hint(monkeypatch, tmp_path):
+    """F541 is cleanup noise, not a warning-level risk."""
+    file_path = tmp_path / "sample.py"
+    file_path.write_text('message = f"static text"\n')
+    context = AnalysisContext(
+        files={file_path: FileInfo.from_path(file_path)},
+        config=AnalysisConfig(check_imports=False, check_lint=True),
+        project_root=tmp_path,
+    )
+    monkeypatch.setattr(lint_module, "_ruff_command_prefix", lambda: ["ruff"])
+    monkeypatch.setattr(
+        lint_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=(
+                '[{"filename": "'
+                + str(file_path)
+                + '", "code": "F541", "message": "f-string without any placeholders",'
+                + ' "location": {"row": 1, "column": 11}, "end_location": {"row": 1, "column": 26},'
+                + ' "fix": null}]'
+            ),
+            stderr="",
+        ),
+    )
+
+    findings = LintAnalyzer().analyze(context)
+
+    assert len(findings) == 1
+    assert findings[0].lint_code == "F541"
+    assert findings[0].severity == Severity.HINT
 
 
 def test_init_file_f401_is_public_api_review_not_proven_unused(monkeypatch, tmp_path):

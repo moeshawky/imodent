@@ -62,9 +62,10 @@ class AnalysisCoordinator:
         from ..analyzers.imports import ImportAnalyzer
         from ..analyzers.lint import LintAnalyzer
         from ..analyzers.residue import ResidueAnalyzer
+        from ..analyzers.rust import RustAnalyzer
         from ..fixers.imports import ImportFixer
 
-        self._analyzers = [ImportAnalyzer(), LintAnalyzer(), ResidueAnalyzer()]
+        self._analyzers = [ImportAnalyzer(), LintAnalyzer(), ResidueAnalyzer(), RustAnalyzer()]
         self._fixers = [ImportFixer()]
 
     def analyze(
@@ -274,6 +275,16 @@ class AnalysisCoordinator:
             if self.project_context is not None
             else None
         )
+        include_patterns = list(self.config.include_patterns)
+        if self.config.check_rust:
+            for pat in [
+                "*.rs", "**/*.rs",
+                "Cargo.toml", "**/Cargo.toml",
+                "clippy.toml", "**/clippy.toml",
+                "rustfmt.toml", "**/rustfmt.toml",
+            ]:
+                if pat not in include_patterns:
+                    include_patterns.append(pat)
         for path in paths:
             if path.is_symlink():
                 continue
@@ -286,7 +297,7 @@ class AnalysisCoordinator:
                 if self._is_included(path, project_root) and not explicit_excluded:
                     files.append(path)
             elif path.is_dir():
-                for pattern in self.config.include_patterns:
+                for pattern in include_patterns:
                     for file_path in path.glob(pattern):
                         if not file_path.is_file():
                             continue
@@ -355,6 +366,7 @@ class AnalysisCoordinator:
         from ..analyzers.imports import ImportAnalyzer
         from ..analyzers.lint import LintAnalyzer
         from ..analyzers.residue import ResidueAnalyzer
+        from ..analyzers.rust import RustAnalyzer
 
         available = []
         if self.config.check_imports:
@@ -362,6 +374,8 @@ class AnalysisCoordinator:
         if self.config.check_lint:
             available.append(LintAnalyzer())
             available.append(ResidueAnalyzer())
+        if self.config.check_rust:
+            available.append(RustAnalyzer())
 
         if names:
             return [a for a in available if a.name in names]

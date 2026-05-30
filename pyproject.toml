@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "imodent"
 version = "1.0.0a1"
-description = "Code intelligence tool — fix, scan, and advise on Python, JSON, YAML"
+description = "Code intelligence tool — fix, scan, and advise on Python, JSON, YAML, and Rust (advisory)"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "imodent contributors"}
 ]
-keywords = ["code-quality", "formatter", "linter", "python", "json", "yaml", "ast", "import-analysis", "architecture"]
+keywords = ["code-quality", "formatter", "linter", "python", "json", "yaml", "ast", "import-analysis", "architecture", "rust", "cargo", "clippy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -31,6 +31,7 @@ dependencies = [
     "pyyaml>=6.0",
     "json-repair>=0.20",
     "ruff>=0.1.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.scripts]

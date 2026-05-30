@@ -2,5 +2,6 @@
 
 from .imports import ImportAnalyzer
 from .lint import LintAnalyzer
+from .rust import RustAnalyzer
 
-__all__ = ["ImportAnalyzer", "LintAnalyzer"]
+__all__ = ["ImportAnalyzer", "LintAnalyzer", "RustAnalyzer"]

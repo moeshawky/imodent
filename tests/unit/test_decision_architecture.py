@@ -978,3 +978,63 @@ class TestCompoundDecisionGuards:
             mode=FixMode.SAFE_AUTO,
             candidates=result.candidates,
         ) == {}
+
+
+# ---------------------------------------------------------------------------
+# Unused-import action order (advisory-first)
+# ---------------------------------------------------------------------------
+
+
+class TestUnusedImportActionOrder:
+    def test_unused_import_action_order_is_investigate_keep_delete(self):
+        """Unused import suggested actions are ordered advisory-first."""
+        from imodent.analysis.decisions import _default_actions_for_issue_type
+        actions = _default_actions_for_issue_type("unused_import")
+        ids = [a.id for a in actions]
+        assert ids == ["investigate", "keep", "delete"]
+        assert actions[0].destructive is False
+        assert actions[1].destructive is False
+        assert actions[2].destructive is True
+
+    def test_duplicate_import_has_investigate_before_remove(self):
+        """Duplicate import actions have investigate before destructive remove."""
+        from imodent.analysis.decisions import _default_actions_for_issue_type
+        actions = _default_actions_for_issue_type("duplicate_import")
+        ids = [a.id for a in actions]
+        assert ids[0] == "investigate"
+        assert ids[-1] == "remove"
+        assert actions[0].destructive is False
+        assert actions[-1].destructive is True
+
+
+# ---------------------------------------------------------------------------
+# TYPE_CHECKING and forward-reference false positive guard
+# ---------------------------------------------------------------------------
+
+
+class TestTypeCheckingFalsePositives:
+    def test_type_checking_guarded_import_no_f821(self, tmp_path):
+        """TYPE_CHECKING guarded imports and string annotations do not produce F821."""
+        source = """\
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+def greet(name: str) -> "Callable[[str], None]":
+    pass
+"""
+        file_path = tmp_path / "type_check.py"
+        file_path.write_text(source)
+        file_info = FileInfo.from_path(file_path)
+        context = AnalysisContext(
+            files={file_path: file_info},
+            graph=build_dependency_graph({file_path: file_info}, tmp_path),
+            config=AnalysisConfig(check_imports=True, check_lint=False),
+        )
+        findings = ImportAnalyzer().analyze(context)
+        # Should not flag Callable as unused (it's used in a string annotation)
+        # and should not produce F821-style false positives
+        undefined = [f for f in findings if f.type == "undefined_api"]
+        assert undefined == []

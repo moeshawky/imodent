@@ -295,6 +295,8 @@ class TestFileInfoEdgeCases:
             (".json", "json"),
             (".yaml", "yaml"),
             (".yml", "yaml"),
+            (".rs", "rust"),
+            (".toml", "toml"),
             (".txt", "unknown"),
             (".md", "unknown"),
         ],

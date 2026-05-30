@@ -18,6 +18,7 @@ DEFAULT_EXCLUDED_DIR_NAMES = {
     "dist",
     "htmlcov",
     "node_modules",
+    "target",
     "venv",
 }
 

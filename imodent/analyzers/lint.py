@@ -260,6 +260,8 @@ def _ruff_command_prefix() -> list[str] | None:
 
 
 def _severity_for_ruff_code(code: str) -> Severity:
+    if code == "F541":
+        return Severity.HINT
     if code.startswith(("E9", "F8")):
         return Severity.ERROR
     if code.startswith(("F", "B", "S")):

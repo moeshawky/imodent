@@ -166,8 +166,12 @@ def analyze_files(
     check_only: bool = False,
     verbose: bool = False,
     confidence: bool = False,
+    check_rust: bool = False,
+    run_cargo: bool = False,
+    run_cargo_check: bool = False,
+    run_cargo_clippy: bool = False,
 ):
-    """Scan project for import issues, lint violations, architectural drift."""
+    """Scan project for import issues, lint violations, architectural drift, Rust advisory."""
     if not paths:
         print("No matching files found.")
         return
@@ -180,6 +184,19 @@ def analyze_files(
         analyze_lint = project_context.config.check_lint
     project_context.config.check_imports = analyze_imports
     project_context.config.check_lint = analyze_lint
+
+    # Apply Rust/Cargo flags
+    if check_rust or run_cargo or run_cargo_check or run_cargo_clippy:
+        project_context.config.check_rust = True
+    if run_cargo:
+        project_context.config.run_cargo = True
+        project_context.config.run_cargo_check = True
+        project_context.config.run_cargo_clippy = True
+    if run_cargo_check:
+        project_context.config.run_cargo_check = True
+    if run_cargo_clippy:
+        project_context.config.run_cargo_clippy = True
+
     coordinator = AnalysisCoordinator(project_context=project_context)
     result = coordinator.analyze(resolved_paths)
     if not result.context.files:
@@ -361,9 +378,10 @@ FIX mode (default)
 
 SCAN mode (--analyze)
   Multi-file project analysis.
-  Import hygiene, lint violations, architectural drift.
+  Import hygiene, lint violations, architectural drift, Rust advisory.
 
-Operates on Python, JSON, JSONL, and YAML files.
+Operates on Python, JSON, JSONL, YAML, and Rust files.
+Rust support is advisory-only (no formatting, no auto-fix).
 Creates .bak backups with --backup. Never modifies files without consent.
 """
 
@@ -388,13 +406,22 @@ examples:
   imodent ./src --fix                         auto-fix safe import issues (analysis implied)
   imodent ./src --report                      review report without modifying files
 
+  # ── SCAN mode with Rust advisory ──────────────────────────────────────
+  imodent . --analyze --rust --report --confidence
+  imodent . --analyze --rust --cargo --report --verbose
+
   Scan mode always recurses into subdirectories. -b, -n, and -c also work
   with scan fixes; --force and -r are fix-mode-only controls.
 
+  Rust support is advisory-only. --rust scans Cargo.toml, clippy.toml,
+  rustfmt.toml, and .rs source for configuration and residue patterns.
+  --cargo runs external Cargo/Clippy oracles (may be slower).
+  imodent does not edit Rust files.
+
   import analysis gives you options per finding:
-  • delete — remove the unused import
-  • keep — preserve it (type hints, re-exports, __all__)
   • investigate — search codebase before deciding
+  • keep — preserve it (type hints, re-exports, __all__)
+  • delete — remove the unused import
   • false-positive — mark as used if analysis missed it
 
   Only asks for input when the correct action is genuinely ambiguous.
@@ -518,6 +545,26 @@ def main():
         action="store_true",
         help="show decision candidates with evidence and confidence scores",
     )
+    scan_group.add_argument(
+        "--rust",
+        action="store_true",
+        help="include Rust advisory analysis (config/source scan only, no formatting)",
+    )
+    scan_group.add_argument(
+        "--cargo",
+        action="store_true",
+        help="run Cargo/Clippy external oracles; implies --rust (may be slower)",
+    )
+    scan_group.add_argument(
+        "--cargo-check",
+        action="store_true",
+        help="run cargo check oracle only; implies --rust",
+    )
+    scan_group.add_argument(
+        "--cargo-clippy",
+        action="store_true",
+        help="run cargo clippy oracle only; implies --rust",
+    )
 
     args = parser.parse_args()
 
@@ -536,6 +583,10 @@ def main():
         or args.interactive
         or args.fix
         or args.confidence
+        or args.rust
+        or args.cargo
+        or args.cargo_check
+        or args.cargo_clippy
     )
     if scan_requested:
         if args.recursive:
@@ -562,6 +613,10 @@ def main():
             check_only=args.check,
             verbose=args.verbose,
             confidence=args.confidence,
+            check_rust=args.rust,
+            run_cargo=args.cargo,
+            run_cargo_check=args.cargo_check,
+            run_cargo_clippy=args.cargo_clippy,
         )
     elif not args.path:
         parser.print_usage()

@@ -91,6 +91,14 @@ def _apply_dict_to_config(config: AnalysisConfig, data: dict) -> AnalysisConfig:
         config.use_ruff = _coerce_bool(data["use_ruff"], "use_ruff", config.use_ruff)
     if "use_pyright" in data:
         config.use_pyright = _coerce_bool(data["use_pyright"], "use_pyright", config.use_pyright)
+    if "check_rust" in data:
+        config.check_rust = _coerce_bool(data["check_rust"], "check_rust", config.check_rust)
+    if "run_cargo" in data:
+        config.run_cargo = _coerce_bool(data["run_cargo"], "run_cargo", config.run_cargo)
+    if "run_cargo_check" in data:
+        config.run_cargo_check = _coerce_bool(data["run_cargo_check"], "run_cargo_check", config.run_cargo_check)
+    if "run_cargo_clippy" in data:
+        config.run_cargo_clippy = _coerce_bool(data["run_cargo_clippy"], "run_cargo_clippy", config.run_cargo_clippy)
     return config
 
 

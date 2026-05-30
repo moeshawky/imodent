@@ -57,6 +57,8 @@ class FileInfo:
             ".ndjson": "jsonl",
             ".yaml": "yaml",
             ".yml": "yaml",
+            ".rs": "rust",
+            ".toml": "toml",
         }
         return lang_map.get(suffix, "unknown")
 
@@ -120,6 +122,12 @@ class AnalysisConfig:
     check_lint: bool = True
     check_types: bool = False
 
+    # Rust advisory support (alpha)
+    check_rust: bool = False
+    run_cargo: bool = False
+    run_cargo_check: bool = False
+    run_cargo_clippy: bool = False
+
     # How to handle findings
     auto_fix_safe: bool = True
     auto_fix_all: bool = False
@@ -149,6 +157,9 @@ class AnalysisConfig:
             "dist/**",
             "**/*.egg-info/**",
             "*.egg-info/**",
+            "**/target/**",
+            "target/**",
+            "target",
         ]
     )
     exclude_patterns_from_config: bool = False

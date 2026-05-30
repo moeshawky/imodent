@@ -226,28 +226,28 @@ def _default_actions_for_issue_type(
     if issue_type == "unused_import":
         return [
             ActionOption(
+                id="investigate",
+                label="Investigate / wire usage",
+                description="Search codebase for actual usage before deciding",
+                destructive=False,
+                safe_auto=True,
+                requires_decision=False,
+            ),
+            ActionOption(
+                id="keep",
+                label="Keep import",
+                description="Preserve the import (typing, re-export, side-effect, future wiring)",
+                destructive=False,
+                safe_auto=True,
+                requires_decision=False,
+            ),
+            ActionOption(
                 id="delete",
                 label="Remove import",
                 description="Remove the unused import statement",
                 destructive=True,
                 safe_auto=False,
                 requires_decision=True,
-            ),
-            ActionOption(
-                id="keep",
-                label="Keep import",
-                description="Preserve the import (typing, re-export, side-effect)",
-                destructive=False,
-                safe_auto=True,
-                requires_decision=False,
-            ),
-            ActionOption(
-                id="investigate",
-                label="Investigate",
-                description="Search codebase for actual usage before deciding",
-                destructive=False,
-                safe_auto=True,
-                requires_decision=False,
             ),
         ]
     if issue_type == "undefined_api":
@@ -272,11 +272,71 @@ def _default_actions_for_issue_type(
     if issue_type in ("duplicate_import",):
         return [
             ActionOption(
+                id="investigate",
+                label="Investigate duplicates",
+                description="Review duplicate imports before removing",
+                destructive=False,
+                safe_auto=True,
+                requires_decision=False,
+            ),
+            ActionOption(
                 id="remove",
                 label="Remove duplicate",
                 description="Remove the duplicate import keeping the first occurrence",
                 destructive=True,
                 safe_auto=False,
+                requires_decision=False,
+            ),
+        ]
+    if issue_type == "rust_advisory":
+        return [
+            ActionOption(
+                id="review_policy",
+                label="Review Rust policy",
+                description="Decide Cargo/Clippy/Rustfmt policy before changing code",
+                destructive=False,
+                safe_auto=True,
+                requires_decision=False,
+            ),
+        ]
+    if issue_type == "rust_diagnostic":
+        return [
+            ActionOption(
+                id="fix_in_source",
+                label="Fix in Rust source",
+                description="Use Cargo/Clippy diagnostic as evidence; imodent does not edit Rust code",
+                destructive=False,
+                safe_auto=False,
+                requires_decision=True,
+            ),
+        ]
+    if issue_type == "rust_unused_import":
+        return [
+            ActionOption(
+                id="investigate",
+                label="Investigate unused `use`",
+                description="Search codebase for actual usage before removing the use statement",
+                destructive=False,
+                safe_auto=True,
+                requires_decision=False,
+            ),
+            ActionOption(
+                id="fix_in_source",
+                label="Remove `use` in Rust source",
+                description="Remove the unused use statement; imodent does not edit Rust code",
+                destructive=False,
+                safe_auto=False,
+                requires_decision=True,
+            ),
+        ]
+    if issue_type == "rust_oracle":
+        return [
+            ActionOption(
+                id="check_toolchain",
+                label="Check Rust toolchain",
+                description="Verify cargo/clippy is installed and project compiles",
+                destructive=False,
+                safe_auto=True,
                 requires_decision=False,
             ),
         ]
@@ -470,11 +530,23 @@ def _issue_type_from_finding(finding) -> str:
         "duplicate_import": "duplicate_import",
         "undefined_api": "undefined_api",
         "declared_behavior_unwired": "declared_behavior_unwired",
+        "rust_diagnostic": "rust_diagnostic",
+        "rust_lint_policy_missing": "rust_advisory",
+        "rust_clippy_config_missing": "rust_advisory",
+        "rust_rustfmt_config_missing": "rust_advisory",
+        "rust_broad_allow": "rust_advisory",
+        "rust_residue_marker": "rust_advisory",
+        "rust_project_unmanaged": "rust_advisory",
+        "rust_oracle_unavailable": "rust_oracle",
+        "rust_oracle_failed": "rust_oracle",
     }
     f_type = getattr(finding, "type", "unknown")
     # Ruff F401 is an unused import, not generic lint
     if f_type == "lint" and getattr(finding, "lint_code", None) == "F401":
         return "unused_import"
+    # Clippy unused_imports is the Rust equivalent of F401
+    if f_type == "rust_diagnostic" and getattr(finding, "lint_code", None) == "unused_imports":
+        return "rust_unused_import"
     return type_map.get(f_type, "unknown")
 
 
@@ -560,11 +632,37 @@ def _score_confidence(
     if f_type == "duplicate_import":
         return 0.95
 
+    # Rust findings
+    if f_type == "rust_diagnostic":
+        for ev in evidence_list:
+            if ev.kind in ("CargoDiagnostic", "ClippyDiagnostic"):
+                level = ev.data.get("level", "error")
+                if level == "error":
+                    return 0.90
+                if level == "warning":
+                    return 0.80
+        return 0.80
+
+    if f_type == "rust_broad_allow":
+        return 0.75
+
+    if f_type in ("rust_lint_policy_missing", "rust_clippy_config_missing", "rust_rustfmt_config_missing", "rust_residue_marker", "rust_project_unmanaged"):
+        return 0.50
+
+    if f_type in ("rust_oracle_unavailable", "rust_oracle_failed"):
+        return 0.40
+
     return 0.50
 
 
 def _destructive_allowed(candidate: DecisionCandidate, rep, group: list) -> bool:
     """Destructive edits require both high confidence AND explicit safety."""
+    # Rust findings are never destructive
+    if candidate.issue_type in (
+        "rust_diagnostic", "rust_advisory", "rust_oracle", "rust_unused_import",
+    ):
+        return False
+
     if candidate.confidence < 0.80:
         return False
 
