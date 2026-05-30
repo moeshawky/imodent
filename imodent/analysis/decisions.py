@@ -597,6 +597,17 @@ def _score_confidence(
     import_info = data.get("import_info") or {}
     intent = import_info.get("intent", "")
 
+    # Fusion-aware: when scorer has no intent (e.g. lint finding fused with
+    # import_intent finding), scan other group members for non-usage intent.
+    if not intent or intent == "usage":
+        for f in group:
+            d = getattr(f, "data", {}) or {}
+            info = d.get("import_info") or {}
+            gi = info.get("intent", "")
+            if gi and gi != "usage":
+                intent = gi
+                break
+
     # Strong Ruff signals
     if lint_code:
         if lint_code == "F821":
