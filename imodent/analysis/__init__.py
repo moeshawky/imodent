@@ -1,6 +1,6 @@
 """Analysis module - coordinates all analysis operations."""
 
-from .context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph
+from .context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph, SymbolUsage
 from .findings import Finding, Severity, Location, FixOption, Advice, Change
 from .coordinator import AnalysisCoordinator, AnalysisResult, FixMode
 from .decisions import (
@@ -17,6 +17,7 @@ __all__ = [
     "AnalysisConfig",
     "FileInfo",
     "DependencyGraph",
+    "SymbolUsage",
     "Finding",
     "Severity",
     "Location",

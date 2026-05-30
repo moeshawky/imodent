@@ -3,7 +3,8 @@
 import ast
 from pathlib import Path
 from typing import Optional
-from ..analysis.context import DependencyGraph, FileInfo
+from ..analysis.context import DependencyGraph, FileInfo, SymbolUsage
+from ..analysis.findings import Location
 from .imports import extract_imports, resolve_module_name, ImportInfo
 
 
@@ -148,7 +149,7 @@ def find_unused_imports(
 
 def trace_symbol_usage(
     symbol: str, files: dict[Path, FileInfo], graph: DependencyGraph
-) -> list[dict]:
+) -> list[SymbolUsage]:
     """Trace where a symbol is used across the codebase.
 
     Args:
@@ -157,7 +158,7 @@ def trace_symbol_usage(
         graph: Dependency graph
 
     Returns:
-        List of usage locations
+        List of usage locations as SymbolUsage objects
     """
     usages = []
 
@@ -165,23 +166,24 @@ def trace_symbol_usage(
         if file_info.language != "python" or not file_info.ast_tree:
             continue
 
-        # Walk AST to find symbol usage
         for node in ast.walk(file_info.ast_tree):
             if isinstance(node, ast.Name) and node.id == symbol:
                 usages.append(
-                    {
-                        "file": path,
-                        "line": node.lineno,
-                        "context": _get_context(file_info.content, node.lineno),
-                    }
+                    SymbolUsage(
+                        symbol=symbol,
+                        file=path,
+                        location=Location(line=node.lineno),
+                        context="reference",
+                    )
                 )
             elif isinstance(node, ast.Attribute) and node.attr == symbol:
                 usages.append(
-                    {
-                        "file": path,
-                        "line": node.lineno,
-                        "context": _get_context(file_info.content, node.lineno),
-                    }
+                    SymbolUsage(
+                        symbol=symbol,
+                        file=path,
+                        location=Location(line=node.lineno),
+                        context="reference",
+                    )
                 )
 
     return usages

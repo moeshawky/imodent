@@ -11,6 +11,7 @@ import sys
 import time
 
 from .context import AnalysisContext, AnalysisConfig, FileInfo
+from .evidence import Evidence
 from .findings import Finding, FixOption, ProofState, Severity
 from .decisions import (
     DecisionCandidate,
@@ -18,7 +19,7 @@ from .decisions import (
     _issue_type_from_finding,
     _subject_key_from_finding,
 )
-from ..graph.dependency import build_dependency_graph
+from ..graph.dependency import build_dependency_graph, trace_symbol_usage
 from ..interfaces import FixResult
 from ..project.discovery import is_generated_artifact
 from ..project.project_context import ProjectContext
@@ -150,6 +151,13 @@ class AnalysisCoordinator:
             from ..analyzers.types import check_pyright
             try:
                 all_findings.extend(check_pyright(context))
+            except Exception:
+                pass
+
+        # Cross-project symbol usage evidence (gated by config.check_imports)
+        if self.config.check_imports:
+            try:
+                _add_cross_file_evidence(all_findings, context)
             except Exception:
                 pass
 
@@ -521,6 +529,59 @@ def _destructive_option(fixer, finding: Finding, context: AnalysisContext) -> Fi
         if option.action == "delete" or not option.is_safe:
             return option
     return None
+
+
+def _add_cross_file_evidence(findings: list[Finding], context: AnalysisContext):
+    """Attach cross-project symbol usage evidence to unused import findings.
+
+    For each unused-import finding, traces the imported symbol across all
+    project files.  If the symbol appears in other files, creates Evidence
+    objects (polarity=context, strength=0.30) and attaches them to both
+    the finding's data dict and the AnalysisContext evidence list.
+    """
+    import_type_names = frozenset(["unused_import", "unused_import_file"])
+
+    for finding in findings:
+        import_name = None
+
+        if finding.type in import_type_names:
+            import_name = getattr(finding, "import_name", None)
+
+        if not import_name:
+            import_info = finding.data.get("import_info", {})
+            import_name = import_info.get("name")
+
+        if not import_name:
+            continue
+
+        usages = trace_symbol_usage(import_name, context.files, context.graph)
+
+        other_file_usages = [
+            u for u in usages if u.file != finding.file
+        ]
+
+        if other_file_usages:
+            usage_files = sorted({str(u.file.name) for u in other_file_usages})
+            evidence = Evidence(
+                kind="symbol_usage",
+                file=finding.file,
+                location=finding.location,
+                source="cross_project_trace",
+                subject=import_name,
+                polarity="context",
+                claim=f"Symbol '{import_name}' used in {len(usage_files)} other "
+                      f"project file(s): {', '.join(usage_files[:3])}",
+                strength=0.30,
+                data={
+                    "symbol": import_name,
+                    "total_cross_file_usages": len(other_file_usages),
+                    "files": usage_files,
+                },
+            )
+            context.add_evidence(evidence)
+            finding.data.setdefault("evidence", []).append(
+                {"id": evidence.id}
+            )
 
 
 def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
