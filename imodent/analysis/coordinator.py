@@ -53,20 +53,6 @@ class AnalysisCoordinator:
             self.config = project_context.config
         else:
             self.config = config or AnalysisConfig()
-        self._analyzers = []
-        self._fixers = []
-        self._load_plugins()
-
-    def _load_plugins(self):
-        """Load analyzer and fixer plugins."""
-        from ..analyzers.imports import ImportAnalyzer
-        from ..analyzers.lint import LintAnalyzer
-        from ..analyzers.residue import ResidueAnalyzer
-        from ..analyzers.rust import RustAnalyzer
-        from ..fixers.imports import ImportFixer
-
-        self._analyzers = [ImportAnalyzer(), LintAnalyzer(), ResidueAnalyzer(), RustAnalyzer()]
-        self._fixers = [ImportFixer()]
 
     def analyze(
         self,
