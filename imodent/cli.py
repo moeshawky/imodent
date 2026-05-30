@@ -55,19 +55,35 @@ def _collect_targets(file_path: Path, recursive: bool = False) -> list[Path]:
         if file_path.is_symlink():
             return []
         return [file_path.resolve()]
+    if not file_path.exists():
+        print(f"✗ {file_path}: no such file or directory", file=sys.stderr)
+        return []
+    if not file_path.is_dir():
+        print(f"✗ {file_path}: not a regular file or directory", file=sys.stderr)
+        return []
     pattern = "**/*" if recursive else "*"
-    return sorted(
-        f.resolve()
-        for f in file_path.glob(pattern)
-        if f.is_file()
-        and not f.is_symlink()
-        and f.suffix.lower() in handled
-        and not is_generated_artifact(f.resolve())
-    )
+    try:
+        return sorted(
+            f.resolve()
+            for f in file_path.glob(pattern)
+            if f.is_file()
+            and not f.is_symlink()
+            and f.suffix.lower() in handled
+            and not is_generated_artifact(f.resolve())
+        )
+    except PermissionError:
+        print(f"✗ {file_path}: permission denied", file=sys.stderr)
+        return []
 
 
 def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False):
     """Fix one file. Write, preview, or validate depending on flags."""
+    try:
+        if file_path.stat().st_size > 10_000_000:
+            print(f"✗ {file_path}: file too large (>10MB)", file=sys.stderr)
+            return
+    except OSError:
+        pass
     try:
         content = file_path.read_text(encoding="utf-8")
     except Exception as e:

@@ -95,7 +95,7 @@ class AnalysisCoordinator:
             try:
                 file_infos[path] = FileInfo.from_path(path)
             except Exception as e:
-                print(f"Warning: Could not load {path}: {e}")
+                print(f"Warning: Could not load {path}: {e}", file=sys.stderr)
 
         # Build dependency graph (use project context root if available)
         if self.project_context is not None:
@@ -121,7 +121,7 @@ class AnalysisCoordinator:
                 findings = analyzer.analyze(context)
                 all_findings.extend(findings)
             except Exception as e:
-                print(f"Warning: Analyzer {analyzer.name} failed: {e}")
+                print(f"Warning: Analyzer {analyzer.name} failed: {e}", file=sys.stderr)
 
         all_findings = _deduplicate_findings(all_findings)
 
@@ -144,22 +144,22 @@ class AnalysisCoordinator:
             from ..analyzers.types import check_mypy
             try:
                 all_findings.extend(check_mypy(context))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: mypy check failed: {e}", file=sys.stderr)
 
         if self.config.use_pyright:
             from ..analyzers.types import check_pyright
             try:
                 all_findings.extend(check_pyright(context))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: pyright check failed: {e}", file=sys.stderr)
 
         # Cross-project symbol usage evidence (gated by config.check_imports)
         if self.config.check_imports:
             try:
                 _add_cross_file_evidence(all_findings, context)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: cross-file evidence failed: {e}", file=sys.stderr)
 
         self._initialize_proof_states(all_findings)
         context.findings = all_findings

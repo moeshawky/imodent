@@ -1,8 +1,5 @@
 """
-Indentation Fixer - Modular Architecture
-
-Core package for language detection, fixing, and validation.
-Now with multi-file analysis, import analysis, and advisory capabilities.
+Code intelligence tool — fix, scan, and advise on Python, JSON, YAML, and Rust.
 """
 
 from .interfaces import LanguageStrategy, Processor, FixResult
@@ -15,6 +12,7 @@ from .analysis import (
     AnalysisConfig,
     FileInfo,
     DependencyGraph,
+    SymbolUsage,
     Finding,
     Severity,
     Location,
@@ -25,6 +23,13 @@ from .analysis import (
     AnalysisResult,
     FixMode,
 )
+
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
+
+try:
+    __version__ = _pkg_version("imodent")
+except PackageNotFoundError:
+    __version__ = "0.0.0dev"
 
 __all__ = [
     # Core
@@ -39,6 +44,7 @@ __all__ = [
     "AnalysisConfig",
     "FileInfo",
     "DependencyGraph",
+    "SymbolUsage",
     "Finding",
     "Severity",
     "Location",
@@ -48,4 +54,6 @@ __all__ = [
     "AnalysisCoordinator",
     "AnalysisResult",
     "FixMode",
+    # Version
+    "__version__",
 ]
