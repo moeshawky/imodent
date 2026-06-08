@@ -1,7 +1,6 @@
 """Base classes for fixers."""
 
 from abc import ABC, abstractmethod
-from typing import Set as typing_Set
 
 from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding, FixOption
@@ -19,7 +18,7 @@ class Fixer(ABC):
 
     @property
     @abstractmethod
-    def handles(self) -> typing_Set[str]:
+    def handles(self) -> set[str]:
         """Finding types this fixer can handle."""
         ...
 

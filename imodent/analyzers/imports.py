@@ -7,18 +7,18 @@ Understands import intent to avoid false positives:
 - CONDITIONAL: Function-level or try-block imports
 - SIDE_EFFECT: Imports that trigger module initialization
 """
+
 import ast
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-from .base import Analyzer, AnalyzerCapability
 from ..analysis.context import AnalysisContext, FileInfo
 from ..analysis.evidence import Evidence
-from ..analysis.findings import Finding, Severity, Location
-from ..graph.imports import extract_imports, ImportInfo, resolve_module_name
-
+from ..analysis.findings import Finding, Location, Severity
+from ..graph.imports import ImportInfo, extract_imports, resolve_module_name
+from .base import Analyzer, AnalyzerCapability
 
 # Files indicating public API re-export
 _RE_EXPORT_FILES = {"__init__.py", "interfaces.py"}
@@ -38,7 +38,9 @@ _REGISTRATION_MODULES = {
 _REGISTRATION_PATTERN = re.compile(r"@\w+\.register|@register|_load_plugins")
 
 # Comment markers that indicate intentional imports
-_PROTECTION_MARKERS = re.compile(r"#\s*(do not remove|side.effect|registration|trigger)", re.IGNORECASE)
+_PROTECTION_MARKERS = re.compile(
+    r"#\s*(do not remove|side.effect|registration|trigger)", re.IGNORECASE
+)
 
 
 def _is_in_try_block(content: str, line: int) -> bool:
@@ -153,7 +155,9 @@ def _is_in_function_or_class(content: str, line: int) -> bool:
                 return True
             if current_indent == 0:
                 # Check if this is a continuation of a multi-line def/class
-                if lstripped.startswith((")", ",", "]", "}", "as ", "except", "finally:")):
+                if lstripped.startswith(
+                    (")", ",", "]", "}", "as ", "except", "finally:")
+                ):
                     continue
                 return False
             target_indent = current_indent
@@ -168,7 +172,6 @@ def _extract_annotation_names(annotation: Any) -> set[str]:
     elif isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
         names.update(_extract_annotation_string_names(annotation.value))
     elif isinstance(annotation, ast.Subscript):
-        # Optional[Location], List[Location]
         names.update(_extract_annotation_names(annotation.value))
         names.update(_extract_annotation_names(annotation.slice))
     elif isinstance(annotation, ast.Tuple):
@@ -198,9 +201,9 @@ def _collect_type_use_names(ast_tree: ast.AST) -> set[str]:
     type_names: set[str] = set()
 
     for node in ast.walk(ast_tree):
-        if isinstance(node, ast.AnnAssign) and node.annotation:
-            type_names.update(_extract_annotation_names(node.annotation))
-        elif isinstance(node, ast.arg) and node.annotation:
+        if (isinstance(node, ast.AnnAssign) and node.annotation) or (
+            isinstance(node, ast.arg) and node.annotation
+        ):
             type_names.update(_extract_annotation_names(node.annotation))
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.returns:
@@ -252,10 +255,7 @@ def _is_reexport_candidate(
     module_root = imp.module.split(".", 1)[0] if imp.module else ""
     if module_root in _TYPING_MODULES:
         return False
-    if module_root in getattr(sys, "stdlib_module_names", set()):
-        return False
-
-    return True
+    return module_root not in getattr(sys, "stdlib_module_names", set())
 
 
 def _detect_import_intent(
@@ -280,7 +280,11 @@ def _detect_import_intent(
 
     # __future__ imports are compiler directives, not runtime names
     if imp.module == "__future__":
-        return "side_effect", "__future__ compiler directive - not a runtime name", False
+        return (
+            "side_effect",
+            "__future__ compiler directive - not a runtime name",
+            False,
+        )
 
     # Check for protection markers in comments
     for i in range(max(0, imp.line - 3), min(len(lines), imp.line + 1)):
@@ -289,9 +293,15 @@ def _detect_import_intent(
 
     # __all__ is a stronger re-export signal regardless of filename
     if dunder_all_names:
-        name_to_check = imp.alias or imp.name or imp.module.split(".")[0] if imp.module else ""
+        name_to_check = (
+            imp.alias or imp.name or imp.module.split(".")[0] if imp.module else ""
+        )
         if name_to_check in dunder_all_names:
-            return "re_export", f"Name '{name_to_check}' appears in __all__ export list", False
+            return (
+                "re_export",
+                f"Name '{name_to_check}' appears in __all__ export list",
+                False,
+            )
 
     # Check if in public API re-export file.
     if filename in _RE_EXPORT_FILES and _is_reexport_candidate(imp, file_path, context):
@@ -306,7 +316,11 @@ def _detect_import_intent(
 
     # Check if from registration module (side-effect import)
     if module in _REGISTRATION_MODULES:
-        return "side_effect", f"Registration module import from '{module}' - triggers decorators", False
+        return (
+            "side_effect",
+            f"Registration module import from '{module}' - triggers decorators",
+            False,
+        )
 
     # Check if in try/except block — context, not exoneration
     if _is_in_try_block(content, imp.line):
@@ -315,7 +329,11 @@ def _detect_import_intent(
 
     # Check for registration patterns in file
     if _REGISTRATION_PATTERN.search(content):
-        return "registration", "File has registration decorators - imports may trigger them", False
+        return (
+            "registration",
+            "File has registration decorators - imports may trigger them",
+            False,
+        )
 
     return "usage", "Normal import - appears unused", False
 
@@ -443,7 +461,10 @@ class ImportAnalyzer(Analyzer):
                         continue
 
                     intent, reason, _ = _detect_import_intent(
-                        imp, file_info.content, path, type_use_names,
+                        imp,
+                        file_info.content,
+                        path,
+                        type_use_names,
                         context=context,
                     )
 
@@ -554,7 +575,9 @@ class ImportAnalyzer(Analyzer):
         return findings
 
     def _find_unused_in_file(
-        self, file_info: FileInfo, imports: list[ImportInfo],
+        self,
+        file_info: FileInfo,
+        imports: list[ImportInfo],
         context: AnalysisContext | None = None,
     ) -> list[Finding]:
         """Find imports not used in the file."""
@@ -612,13 +635,16 @@ class ImportAnalyzer(Analyzer):
         for node in ast.walk(file_info.ast_tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__all__":
-                        if isinstance(node.value, (ast.List, ast.Tuple)):
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(
-                                    elt.value, str
-                                ):
-                                    dunder_all_names.add(elt.value)
+                    if (
+                        isinstance(target, ast.Name)
+                        and target.id == "__all__"
+                        and isinstance(node.value, (ast.List, ast.Tuple))
+                    ):
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(
+                                elt.value, str
+                            ):
+                                dunder_all_names.add(elt.value)
 
         for imp in imports:
             name_to_check = imp.alias or imp.name or imp.module.split(".")[0]
@@ -633,25 +659,39 @@ class ImportAnalyzer(Analyzer):
             if not is_used:
                 # Cognitive detection
                 intent, intent_reason, auto_fix_safe = _detect_import_intent(
-                    imp, file_info.content, file_info.path, type_use_names, dunder_all_names,
+                    imp,
+                    file_info.content,
+                    file_info.path,
+                    type_use_names,
+                    dunder_all_names,
                     context,
                 )
 
                 # Project-graph verification for re-export intent
                 reexport_importers: list[str] = []
-                if intent == "re_export" and context is not None and context.project_root is not None:
-                    module_name = resolve_module_name(file_info.path, context.project_root)
+                if (
+                    intent == "re_export"
+                    and context is not None
+                    and context.project_root is not None
+                ):
+                    module_name = resolve_module_name(
+                        file_info.path, context.project_root
+                    )
                     graph_importers = context.graph.get_importers(module_name)
                     if not graph_importers:
                         intent = "usage"
-                        intent_reason = (
-                            "Re-export file but no cross-file importers found in project graph"
-                        )
+                        intent_reason = "Re-export file but no cross-file importers found in project graph"
                         auto_fix_safe = False
                     else:
                         reexport_importers = graph_importers
 
-                if intent in ("registration", "re_export", "typing", "side_effect", "try_block"):
+                if intent in (
+                    "registration",
+                    "re_export",
+                    "typing",
+                    "side_effect",
+                    "try_block",
+                ):
                     finding_type = "import_intent"
                     message = (
                         f"Import '{imp.import_statement}' is not directly used, "
@@ -660,7 +700,9 @@ class ImportAnalyzer(Analyzer):
                     fixable = False
                 else:
                     finding_type = "unused_import_file"
-                    message = f"Import '{imp.import_statement}' is not used in this file"
+                    message = (
+                        f"Import '{imp.import_statement}' is not used in this file"
+                    )
                     fixable = True
 
                 evidence_entries = [
@@ -693,12 +735,12 @@ class ImportAnalyzer(Analyzer):
                                 else f"{name_to_check} not in __all__"
                             ),
                             polarity=(
-                                "context" if name_to_check in dunder_all_names
+                                "context"
+                                if name_to_check in dunder_all_names
                                 else "against"
                             ),
                             strength=(
-                                0.30 if name_to_check in dunder_all_names
-                                else 0.40
+                                0.30 if name_to_check in dunder_all_names else 0.40
                             ),
                         ).to_dict()
                     )
@@ -742,23 +784,19 @@ class ImportAnalyzer(Analyzer):
                                 "single_alias": _is_single_alias_import_statement(
                                     file_info.content, imp.line
                                 ),
-                            }
+                            },
                         },
                     )
                 )
 
         return findings
 
-    def _is_local_import(
-        self, imp: ImportInfo, context: AnalysisContext
-    ) -> bool:
+    def _is_local_import(self, imp: ImportInfo, context: AnalysisContext) -> bool:
         """Check if import is from the same project."""
         module = imp.module.split(".")[0] if imp.module else ""
         return module in context.graph.module_to_file
 
-    def _check_project_usage(
-        self, imp: ImportInfo, context: AnalysisContext
-    ) -> bool:
+    def _check_project_usage(self, imp: ImportInfo, context: AnalysisContext) -> bool:
         """Check if imported symbol is used elsewhere."""
         name = imp.alias or imp.name
         if not name:
@@ -772,9 +810,12 @@ class ImportAnalyzer(Analyzer):
         for node in ast.walk(ast_tree):
             if isinstance(node, ast.Name) and node.id == name:
                 return True
-            if isinstance(node, ast.Attribute):
-                if isinstance(node.value, ast.Name) and node.value.id == name:
-                    return True
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == name
+            ):
+                return True
             if isinstance(node, ast.ClassDef):
                 for base in node.bases:
                     if isinstance(base, ast.Name) and base.id == name:

@@ -2,29 +2,29 @@
 Code intelligence tool — fix, scan, and advise on Python, JSON, YAML, and Rust.
 """
 
-from .interfaces import LanguageStrategy, Processor, FixResult
-from .registry import StrategyRegistry, ProcessorRegistry
-from .pipeline import FixPipeline
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 # Analysis components
 from .analysis import (
-    AnalysisContext,
-    AnalysisConfig,
-    FileInfo,
-    DependencyGraph,
-    SymbolUsage,
-    Finding,
-    Severity,
-    Location,
-    FixOption,
     Advice,
-    Change,
+    AnalysisConfig,
+    AnalysisContext,
     AnalysisCoordinator,
     AnalysisResult,
+    Change,
+    DependencyGraph,
+    FileInfo,
+    Finding,
     FixMode,
+    FixOption,
+    Location,
+    Severity,
+    SymbolUsage,
 )
-
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from .interfaces import FixResult, LanguageStrategy, Processor
+from .pipeline import FixPipeline
+from .registry import ProcessorRegistry, StrategyRegistry
 
 try:
     __version__ = _pkg_version("imodent")
@@ -32,28 +32,28 @@ except PackageNotFoundError:
     __version__ = "0.0.0dev"
 
 __all__ = [
-    # Core
-    "LanguageStrategy",
-    "Processor",
-    "FixResult",
-    "StrategyRegistry",
-    "ProcessorRegistry",
-    "FixPipeline",
+    "Advice",
+    "AnalysisConfig",
     # Analysis
     "AnalysisContext",
-    "AnalysisConfig",
-    "FileInfo",
-    "DependencyGraph",
-    "SymbolUsage",
-    "Finding",
-    "Severity",
-    "Location",
-    "FixOption",
-    "Advice",
-    "Change",
     "AnalysisCoordinator",
     "AnalysisResult",
+    "Change",
+    "DependencyGraph",
+    "FileInfo",
+    "Finding",
     "FixMode",
+    "FixOption",
+    "FixPipeline",
+    "FixResult",
+    # Core
+    "LanguageStrategy",
+    "Location",
+    "Processor",
+    "ProcessorRegistry",
+    "Severity",
+    "StrategyRegistry",
+    "SymbolUsage",
     # Version
     "__version__",
 ]

@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, TYPE_CHECKING
-
-from .findings import Location
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .decisions import SubjectKey
+    from pathlib import Path
+
+    from .decision_models import SubjectKey
+    from .findings import Location
 
 # global monotonically-increasing counter seeded at 1.
 # itertools.count is thread-safe for next() but NOT for iteration.
@@ -45,7 +45,7 @@ class Evidence:
     data: dict[str, Any] = field(default_factory=dict)
     polarity: str = "context"  # "context"=neutral, "for"=supports, "against"=counters
     claim: str = ""
-    strength: float = 0.5  # Weight of this evidence (0.0–1.0), default 0.5 neutral
+    strength: float = 0.5  # Weight of this evidence (0.0-1.0), default 0.5 neutral
     subject_key: SubjectKey | None = None  # TYPE_CHECKING only — not JSON-serializable
     id: int = field(default_factory=_next_evidence_id)
 

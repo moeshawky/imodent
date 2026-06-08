@@ -1,10 +1,10 @@
 """Core data types for analysis findings."""
 
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import uuid
 
 
 class Severity(Enum):
@@ -69,7 +69,9 @@ class Finding:
     lint_source: str | None = None
 
     # Evidence lifecycle
-    proof_state: str | None = None  # Defaults to RAW; Ruff F401→PROVEN_UNUSED, F841→EXTERNALLY_VERIFIED
+    proof_state: str | None = (
+        None  # Defaults to RAW; Ruff F401→PROVEN_UNUSED, F841→EXTERNALLY_VERIFIED
+    )
 
     @classmethod
     def create(

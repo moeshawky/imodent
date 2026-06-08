@@ -6,16 +6,16 @@ import json
 import re
 import shutil
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .base import Analyzer, AnalyzerCapability
-from ..analysis.context import AnalysisContext
 from ..analysis.evidence import Evidence
 from ..analysis.findings import Finding, Location, Severity
+from .base import Analyzer, AnalyzerCapability
 
 if TYPE_CHECKING:
-    pass
+    from pathlib import Path
+
+    from ..analysis.context import AnalysisContext
 
 
 class RustAnalyzer(Analyzer):
@@ -44,14 +44,10 @@ class RustAnalyzer(Analyzer):
             return []
 
         rust_files = [
-            path
-            for path, fi in context.files.items()
-            if fi.language == "rust"
+            path for path, fi in context.files.items() if fi.language == "rust"
         ]
         toml_files = [
-            path
-            for path, fi in context.files.items()
-            if fi.language == "toml"
+            path for path, fi in context.files.items() if fi.language == "toml"
         ]
         if not rust_files and not toml_files:
             return []
@@ -73,7 +69,9 @@ class RustAnalyzer(Analyzer):
             )
 
         for root in cargo_roots:
-            ws_root = context.project_root if context.project_root in cargo_roots else None
+            ws_root = (
+                context.project_root if context.project_root in cargo_roots else None
+            )
             findings.extend(_scan_cargo_root(context, root, workspace_root=ws_root))
 
         if context.config.run_cargo or context.config.run_cargo_check:
@@ -136,6 +134,7 @@ def _discover_cargo_roots(
                     if stripped.startswith("members") and "=" in stripped:
                         # Parse: members = ["crate1", "crate2"] or members = ["crate1"]
                         import re as _re
+
                         for match in _re.finditer(r'"([^"]+)"', stripped):
                             member = match.group(1)
                             member_path = context.project_root / member / "Cargo.toml"
@@ -187,7 +186,10 @@ def _scan_cargo_root(
         ws_cargo = workspace_root / "Cargo.toml"
         ws_cargo_content = _read_file(ws_cargo)
         if ws_cargo_content:
-            ws_has_clippy = "clippy" in ws_cargo_content.lower() and "[lints" in ws_cargo_content.lower()
+            ws_has_clippy = (
+                "clippy" in ws_cargo_content.lower()
+                and "[lints" in ws_cargo_content.lower()
+            )
         # Check for clippy.toml at workspace root
         if not ws_has_clippy:
             ws_has_clippy = (workspace_root / "clippy.toml").exists()
@@ -208,7 +210,9 @@ def _scan_cargo_root(
                 Finding.create(
                     type="rust_lint_policy_missing",
                     severity=Severity.INFO,
-                    file=cargo_toml_path if cargo_toml_path.exists() else root / "Cargo.toml",
+                    file=cargo_toml_path
+                    if cargo_toml_path.exists()
+                    else root / "Cargo.toml",
                     message=(
                         "No [lints] or [workspace.lints] section in Cargo.toml. "
                         "Consider defining an explicit Rust/Clippy lint policy."
@@ -225,7 +229,9 @@ def _scan_cargo_root(
         clippy_exists = clippy_toml_path.exists() or clippy_toml_path in context.files
         has_clippy_policy = clippy_exists
         if not has_clippy_policy and cargo_content is not None:
-            has_clippy_policy = "clippy" in cargo_content.lower() and "[lints" in cargo_content.lower()
+            has_clippy_policy = (
+                "clippy" in cargo_content.lower() and "[lints" in cargo_content.lower()
+            )
 
         if not has_clippy_policy:
             findings.append(
@@ -246,7 +252,9 @@ def _scan_cargo_root(
     # 5.3 Rustfmt config missing (skip for workspace members inheriting from root)
     if not is_workspace_member:
         rustfmt_toml_path = root / "rustfmt.toml"
-        rustfmt_exists = rustfmt_toml_path.exists() or rustfmt_toml_path in context.files
+        rustfmt_exists = (
+            rustfmt_toml_path.exists() or rustfmt_toml_path in context.files
+        )
         if not rustfmt_exists:
             findings.append(
                 Finding.create(
@@ -391,7 +399,11 @@ def _scan_cargo_root(
         if content is None:
             continue
         # Skip test files and examples for residue markers — these are expected there
-        rel = str(rs_path.relative_to(root)) if _is_under_root(rs_path, root) else str(rs_path)
+        rel = (
+            str(rs_path.relative_to(root))
+            if _is_under_root(rs_path, root)
+            else str(rs_path)
+        )
         rel_parts = set(rel.split("/"))
         is_test_or_example = (
             "tests" in rel_parts
@@ -414,10 +426,7 @@ def _scan_cargo_root(
             for marker, label in _RESIDUE_MARKERS.items():
                 if marker in stripped:
                     # dbg! outside test/example is genuinely worth flagging
-                    if marker == "dbg!":
-                        sev = Severity.WARNING
-                    else:
-                        sev = Severity.INFO
+                    sev = Severity.WARNING if marker == "dbg!" else Severity.INFO
                     findings.append(
                         Finding.create(
                             type="rust_residue_marker",
@@ -485,7 +494,9 @@ def _run_cargo_check(
     root: Path,
 ) -> list[Finding]:
     """Run cargo check --message-format=json and parse diagnostics."""
-    return _run_cargo_command(context, root, "check", ["cargo", "check", "--message-format=json"])
+    return _run_cargo_command(
+        context, root, "check", ["cargo", "check", "--message-format=json"]
+    )
 
 
 def _run_cargo_clippy(
@@ -525,7 +536,7 @@ def _run_cargo_command(
 
     command[0] = cargo_bin
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603
             command,
             cwd=str(root),
             text=True,
@@ -612,7 +623,9 @@ def _parse_cargo_json_output(
             continue
 
         diag_code_obj = message.get("code")
-        diag_code = diag_code_obj.get("code", "") if isinstance(diag_code_obj, dict) else ""
+        diag_code = (
+            diag_code_obj.get("code", "") if isinstance(diag_code_obj, dict) else ""
+        )
         level = message.get("level", "error")
         msg_text = message.get("message", "")
         spans = message.get("spans", [])
@@ -648,7 +661,9 @@ def _parse_cargo_json_output(
             file_path = root / "Cargo.toml"
 
         severity = _severity_for_cargo_level(level)
-        evidence_kind = "CargoDiagnostic" if command_name == "check" else "ClippyDiagnostic"
+        evidence_kind = (
+            "CargoDiagnostic" if command_name == "check" else "ClippyDiagnostic"
+        )
         evidence_claim = _claim_for_cargo_level(level, diag_code)
 
         ev = Evidence(

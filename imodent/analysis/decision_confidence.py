@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .decision_policy import (
     RUST_ADVISORY_FINDING_TYPES,
     RUST_ORACLE_FINDING_TYPES,
     STRONG_RUFF_CODES,
 )
-from .evidence import Evidence
+
+if TYPE_CHECKING:
+    from .evidence import Evidence
 
 
 def _compute_confidence_label(confidence: float) -> str:
@@ -35,7 +38,7 @@ def _score_confidence(rep, group: list, evidence_list: list[Evidence]) -> float:
 
     f_type = getattr(scorer, "type", "unknown")
     lint_code = getattr(scorer, "lint_code", None)
-    file = getattr(scorer, "file", Path("."))
+    file = getattr(scorer, "file", Path())
     data = getattr(scorer, "data", {}) or {}
     import_info = data.get("import_info") or {}
     intent = import_info.get("intent", "")
@@ -60,9 +63,10 @@ def _score_confidence(rep, group: list, evidence_list: list[Evidence]) -> float:
         if lint_code == "F401":
             # Defense-in-depth: evidence-driven public_api_reexport detection
             for ev in evidence_list:
-                if ev.claim == "public_api_reexport" or ev.polarity == "context":
-                    if ev.strength < 0.50:
-                        return 0.10
+                if (
+                    ev.claim == "public_api_reexport" or ev.polarity == "context"
+                ) and ev.strength < 0.50:
+                    return 0.10
                 if ev.kind == "ReExport" and ev.strength >= 0.60:
                     return 0.15
             # Check if it's a package-local __init__.py re-export

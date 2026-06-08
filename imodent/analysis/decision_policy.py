@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from .decision_models import DecisionCandidate
+from typing import TYPE_CHECKING
+
 from .findings import ProofState
+
+if TYPE_CHECKING:
+    from .decision_models import DecisionCandidate
 
 RUST_NON_DESTRUCTIVE_ISSUE_TYPES = frozenset(
     ["rust_diagnostic", "rust_advisory", "rust_oracle", "rust_unused_import"]
@@ -83,7 +87,4 @@ def _requires_decision(candidate: DecisionCandidate, group: list) -> bool:
         return True
 
     proof_state = candidate.proof_state
-    if proof_state in REVIEW_REQUIRED_PROOF_STATES:
-        return True
-
-    return False
+    return proof_state in REVIEW_REQUIRED_PROOF_STATES

@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .evidence import Evidence
 from .findings import Finding, Location
@@ -20,10 +19,10 @@ class FileInfo:
     language: str
     encoding: str = "utf-8"
     has_syntax_errors: bool = False
-    ast_tree: Optional[ast.AST] = None  # Renamed to avoid conflict with ast module
+    ast_tree: ast.AST | None = None  # Renamed to avoid conflict with ast module
 
     @classmethod
-    def from_path(cls, path: Path) -> "FileInfo":
+    def from_path(cls, path: Path) -> FileInfo:
         """Load file info from path."""
         content = path.read_text(encoding="utf-8")
         language = cls._detect_language(path)
@@ -111,7 +110,6 @@ class SymbolUsage:
     context: str  # 'import', 'call', 'reference', 'assignment'
 
 
-
 @dataclass
 class AnalysisConfig:
     """Configuration for analysis."""
@@ -180,7 +178,7 @@ class AnalysisContext:
     config: AnalysisConfig = field(default_factory=AnalysisConfig)
     project_root: Path | None = None
 
-    def get_file(self, path: Path) -> Optional[FileInfo]:
+    def get_file(self, path: Path) -> FileInfo | None:
         """Get file info by path."""
         return self.files.get(path)
 

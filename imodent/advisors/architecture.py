@@ -1,11 +1,10 @@
 """Architecture advisor - provides architectural recommendations."""
 
-from typing import List
 from collections import Counter
 
-from .base import Advisor
 from ..analysis.context import AnalysisContext
-from ..analysis.findings import Finding, Advice
+from ..analysis.findings import Advice, Finding
+from .base import Advisor
 
 
 class ArchitectureAdvisor(Advisor):
@@ -19,7 +18,7 @@ class ArchitectureAdvisor(Advisor):
     def priority(self) -> int:
         return 7  # Higher priority
 
-    def should_advise(self, findings: List[Finding], context: AnalysisContext) -> bool:
+    def should_advise(self, findings: list[Finding], context: AnalysisContext) -> bool:
         """Check if there are architectural issues to advise on."""
         # Advise if there are import issues that suggest architectural problems
         import_issues = [f for f in findings if "import" in f.type]
@@ -34,12 +33,9 @@ class ArchitectureAdvisor(Advisor):
 
         # Many unused imports in one file
         file_counts = Counter(f.file for f in import_issues if "unused" in f.type)
-        if file_counts and max(file_counts.values()) > 3:
-            return True
+        return bool(file_counts and max(file_counts.values()) > 3)
 
-        return False
-
-    def advise(self, findings: List[Finding], context: AnalysisContext) -> List[Advice]:
+    def advise(self, findings: list[Finding], context: AnalysisContext) -> list[Advice]:
         """Generate architectural advice."""
         advices = []
 
@@ -112,9 +108,8 @@ class ArchitectureAdvisor(Advisor):
             return False
 
         visited = set()
-        for module in graph.imports.keys():
-            if module not in visited:
-                if has_cycle(module, visited, set()):
-                    return True
+        for module in graph.imports:
+            if module not in visited and has_cycle(module, visited, set()):
+                return True
 
         return False

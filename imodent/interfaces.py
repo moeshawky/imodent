@@ -4,9 +4,11 @@ Abstract Base Classes for imodent.
 These define the contracts that all language strategies and processors must implement.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 
 @dataclass
@@ -15,8 +17,8 @@ class FixResult:
 
     success: bool
     content: str
-    errors: List[str]
-    warnings: List[str]
+    errors: list[str]
+    warnings: list[str]
     original_valid: bool
     fixed_valid: bool
 
@@ -37,7 +39,7 @@ class LanguageStrategy(ABC):
 
     @property
     @abstractmethod
-    def extensions(self) -> List[str]:
+    def extensions(self) -> list[str]:
         """File extensions associated with this language (e.g., ['.py', '.pyw'])."""
         pass
 
@@ -69,7 +71,7 @@ class LanguageStrategy(ABC):
         pass
 
     @abstractmethod
-    def validate(self, content: str) -> Tuple[bool, Optional[str]]:
+    def validate(self, content: str) -> tuple[bool, str | None]:
         """
         Validate that the content is syntactically correct.
 
@@ -111,11 +113,76 @@ class Processor(ABC):
         """
         pass
 
-# Re-exports at module bottom: flattens namespace so callers can `from imodent import Finding, AnalysisContext` etc.
-# noqa: E402 suppresses import-not-at-top; F401 suppresses unused-import (these are re-exports, not consumed locally).
-# These lines are in the "do not remove" protected set per AGENTS.md.
 
-# Re-export analysis types for convenience
-from .analysis.findings import Finding, Severity, Location, FixOption, Advice, Change  # noqa: E402, F401
-from .analysis.context import AnalysisContext, AnalysisConfig, FileInfo, DependencyGraph  # noqa: E402, F401
-from .analysis.coordinator import AnalysisCoordinator, AnalysisResult, FixMode  # noqa: E402, F401
+# Re-exports at module bottom: flattens namespace so callers can
+# `from imodent import Finding, AnalysisContext` etc.
+# These lines are in the "do not remove" protected set per AGENTS.md.
+# Using lazy imports to avoid circular dependency with analysis.coordinator.
+
+if TYPE_CHECKING:
+    from .analysis.context import (
+        AnalysisConfig,
+        AnalysisContext,
+        DependencyGraph,
+        FileInfo,
+    )
+    from .analysis.coordinator import (
+        AnalysisCoordinator,
+        AnalysisResult,
+        FixMode,
+    )
+    from .analysis.findings import (
+        Advice,
+        Change,
+        Finding,
+        FixOption,
+        Location,
+        Severity,
+    )
+
+
+def __getattr__(name: str):
+    """Lazy import for re-exported analysis types."""
+    _lazy = {
+        "AnalysisConfig": ".analysis.context",
+        "AnalysisContext": ".analysis.context",
+        "DependencyGraph": ".analysis.context",
+        "FileInfo": ".analysis.context",
+        "AnalysisCoordinator": ".analysis.coordinator",
+        "AnalysisResult": ".analysis.coordinator",
+        "FixMode": ".analysis.coordinator",
+        "Advice": ".analysis.findings",
+        "Change": ".analysis.findings",
+        "Finding": ".analysis.findings",
+        "FixOption": ".analysis.findings",
+        "Location": ".analysis.findings",
+        "Severity": ".analysis.findings",
+    }
+    if name in _lazy:
+        import importlib
+        module = importlib.import_module(_lazy[name], __package__)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = [
+    "Advice",
+    # Re-exports (lazy loaded)
+    "AnalysisConfig",
+    "AnalysisContext",
+    "AnalysisCoordinator",
+    "AnalysisResult",
+    "Change",
+    "DependencyGraph",
+    "FileInfo",
+    "Finding",
+    "FixMode",
+    "FixOption",
+    "FixResult",
+    "LanguageStrategy",
+    "Location",
+    "Processor",
+    "Severity",
+]

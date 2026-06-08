@@ -6,9 +6,8 @@ Broken YAML is flagged with diagnostics, not silently rejected.
 
 import json
 import re
-from typing import List, Optional, Tuple
 
-from ..interfaces import LanguageStrategy, FixResult
+from ..interfaces import FixResult, LanguageStrategy
 from ..registry import StrategyRegistry
 
 
@@ -21,7 +20,7 @@ class YAMLStrategy(LanguageStrategy):
         return "yaml"
 
     @property
-    def extensions(self) -> List[str]:
+    def extensions(self) -> list[str]:
         return [".yaml", ".yml"]
 
     def detect(self, content: str) -> bool:
@@ -65,10 +64,7 @@ class YAMLStrategy(LanguageStrategy):
             return True
 
         # Bare key: value pattern anchored to line start.
-        if re.search(r"^[a-zA-Z_][a-zA-Z0-9_.-]*\s*:", stripped, re.MULTILINE):
-            return True
-
-        return False
+        return bool(re.search(r"^[a-zA-Z_][a-zA-Z0-9_.-]*\s*:", stripped, re.MULTILINE))
 
     def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """Fix YAML formatting using ruamel.yaml first, then PyYAML as fallback."""
@@ -178,7 +174,7 @@ class YAMLStrategy(LanguageStrategy):
                 fixed_valid=False,
             )
 
-    def validate(self, content: str) -> Tuple[bool, Optional[str]]:
+    def validate(self, content: str) -> tuple[bool, str | None]:
         """Validate YAML syntax."""
         import yaml
 

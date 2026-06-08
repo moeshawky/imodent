@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .evidence import Evidence
 from .findings import Location, ProofState
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .evidence import Evidence
 
 
 @dataclass(frozen=True)

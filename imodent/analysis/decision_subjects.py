@@ -60,7 +60,7 @@ def _subject_key_from_finding(finding) -> SubjectKey | None:
     For Ruff F401 diagnostics, normalizes to import-style key so that
     the subject identity matches what the local analyzer uses.
     """
-    file = getattr(finding, "file", Path("."))
+    file = getattr(finding, "file", Path())
     f_type = getattr(finding, "type", "unknown")
     lint_code = getattr(finding, "lint_code", None)
     lint_source = getattr(finding, "lint_source", None)

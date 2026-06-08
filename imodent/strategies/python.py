@@ -6,9 +6,8 @@ Handles Python indentation fixing using AST-based validation.
 
 import ast
 import re
-from typing import Dict, List, Optional, Tuple
 
-from ..interfaces import LanguageStrategy, FixResult
+from ..interfaces import FixResult, LanguageStrategy
 from ..registry import StrategyRegistry
 
 
@@ -23,8 +22,12 @@ def _ends_with_block_colon(line: str) -> bool:
     i = 0
     while i < len(stripped):
         c = stripped[i]
-        if not in_string and i + 2 < len(stripped) and stripped[i:i+3] in ('"""', "'''"):
-            quote = stripped[i:i+3]
+        if (
+            not in_string
+            and i + 2 < len(stripped)
+            and stripped[i : i + 3] in ('"""', "'''")
+        ):
+            quote = stripped[i : i + 3]
             end = stripped.find(quote, i + 3)
             if end == -1:
                 break
@@ -54,9 +57,7 @@ def _ends_with_block_colon(line: str) -> bool:
     # Reject colons inside dict/list literals (unclosed { or [)
     open_braces = cleaned.count("{") - cleaned.count("}")
     open_brackets = cleaned.count("[") - cleaned.count("]")
-    if open_braces > 0 or open_brackets > 0:
-        return False
-    return True
+    return not (open_braces > 0 or open_brackets > 0)
 
 
 class ASTStructureVisitor:
@@ -66,7 +67,7 @@ class ASTStructureVisitor:
         # Maps AST node line numbers to their indentation level (0=module-level,
         # 1=first-level block, ...). Populated by visit_node() for every node
         # with a .lineno attribute.
-        self.line_to_level: Dict[int, int] = {}
+        self.line_to_level: dict[int, int] = {}
         self.block_starts: set[int] = set()
 
     def visit_node(self, node: ast.AST, level: int):
@@ -137,7 +138,7 @@ class PythonStrategy(LanguageStrategy):
         return "python"
 
     @property
-    def extensions(self) -> List[str]:
+    def extensions(self) -> list[str]:
         return [".py", ".pyw", ".pyi"]
 
     def detect(self, content: str) -> bool:
@@ -224,10 +225,9 @@ class PythonStrategy(LanguageStrategy):
                         original_valid=original_valid,
                         fixed_valid=False,
                     )
-                else:
-                    warnings.append(
-                        f"Original code has syntax error (--force): {original_error}"
-                    )
+                warnings.append(
+                    f"Original code has syntax error (--force): {original_error}"
+                )
 
         # STAGE 1: Try black first (it handles complex formatting)
         try:
@@ -246,10 +246,9 @@ class PythonStrategy(LanguageStrategy):
                     original_valid=original_valid,
                     fixed_valid=True,
                 )
-            else:
-                warnings.append(
-                    f"Black output invalid: {error}, falling back to internal logic"
-                )
+            warnings.append(
+                f"Black output invalid: {error}, falling back to internal logic"
+            )
         except ImportError:
             warnings.append("black not installed, using internal AST logic")
         except Exception as e:
@@ -284,7 +283,7 @@ class PythonStrategy(LanguageStrategy):
             fixed_valid=fixed_valid,
         )
 
-    def validate(self, content: str) -> Tuple[bool, Optional[str]]:
+    def validate(self, content: str) -> tuple[bool, str | None]:
         """Validate Python syntax."""
         try:
             ast.parse(content)
@@ -297,10 +296,10 @@ class PythonStrategy(LanguageStrategy):
     def _reindent(self, content: str, ast_info: dict, indent_size: int) -> str:
         """Reindent content using AST levels."""
         lines = content.splitlines()
-        fixed_lines: List[str] = []
+        fixed_lines: list[str] = []
 
         level_stack = [0]
-        continuation_indent_stack: List[int] = []
+        continuation_indent_stack: list[int] = []
         last_block_line = 0
 
         for lineno, raw_line in enumerate(lines, 1):
@@ -348,7 +347,9 @@ class PythonStrategy(LanguageStrategy):
                 open_pos = (
                     stripped.find("(")
                     if "(" in stripped
-                    else stripped.find("[") if "[" in stripped else stripped.find("{")
+                    else stripped.find("[")
+                    if "[" in stripped
+                    else stripped.find("{")
                 )
                 continuation_indent_stack.append(open_pos + 1)
 

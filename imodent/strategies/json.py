@@ -6,9 +6,8 @@ Uses json-repair for broken JSON, standard json for valid JSON.
 
 import json
 import re
-from typing import List, Optional, Tuple
 
-from ..interfaces import LanguageStrategy, FixResult
+from ..interfaces import FixResult, LanguageStrategy
 from ..registry import StrategyRegistry
 
 
@@ -21,7 +20,7 @@ class JSONStrategy(LanguageStrategy):
         return "json"
 
     @property
-    def extensions(self) -> List[str]:
+    def extensions(self) -> list[str]:
         return [".json"]
 
     def detect(self, content: str) -> bool:
@@ -115,7 +114,7 @@ class JSONStrategy(LanguageStrategy):
                 fixed_valid=False,
             )
 
-    def validate(self, content: str) -> Tuple[bool, Optional[str]]:
+    def validate(self, content: str) -> tuple[bool, str | None]:
         """Validate JSON syntax."""
         try:
             json.loads(content)

@@ -4,7 +4,6 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -12,8 +11,8 @@ class ImportInfo:
     """Information about a single import statement."""
 
     module: str  # The module being imported
-    name: Optional[str]  # Specific name (from X import Y) or None (import X)
-    alias: Optional[str]  # as Z
+    name: str | None  # Specific name (from X import Y) or None (import X)
+    alias: str | None  # as Z
     line: int
     is_from_import: bool
     file: Path

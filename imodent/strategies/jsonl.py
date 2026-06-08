@@ -5,9 +5,8 @@ Each line must be valid JSON — broken lines are flagged, not silently rejected
 """
 
 import json
-from typing import List, Optional, Tuple
 
-from ..interfaces import LanguageStrategy, FixResult
+from ..interfaces import FixResult, LanguageStrategy
 from ..registry import StrategyRegistry
 
 
@@ -20,7 +19,7 @@ class JSONLStrategy(LanguageStrategy):
         return "jsonl"
 
     @property
-    def extensions(self) -> List[str]:
+    def extensions(self) -> list[str]:
         return [".jsonl", ".ndjson"]
 
     def detect(self, content: str) -> bool:
@@ -75,7 +74,7 @@ class JSONLStrategy(LanguageStrategy):
             fixed_valid=len(errors) == 0,
         )
 
-    def validate(self, content: str) -> Tuple[bool, Optional[str]]:
+    def validate(self, content: str) -> tuple[bool, str | None]:
         """Validate JSONL syntax (each line must be valid JSON)."""
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         for i, line in enumerate(lines, 1):

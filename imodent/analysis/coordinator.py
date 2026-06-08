@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from dataclasses import replace
-from typing import Optional
-from enum import Enum
+import contextlib
 import fnmatch
 import sys
 import time
+from dataclasses import replace
+from enum import Enum
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .context import AnalysisContext, AnalysisConfig, FileInfo
-from .evidence import Evidence
-from .findings import Finding, FixOption, ProofState, Severity
-from .decisions import (
-    DecisionCandidate,
-    DecisionEngine,
-    _issue_type_from_finding,
-    _subject_key_from_finding,
-)
 from ..graph.dependency import build_dependency_graph, trace_symbol_usage
 from ..interfaces import FixResult
 from ..project.discovery import is_generated_artifact
-from ..project.project_context import ProjectContext
+from .context import AnalysisConfig, AnalysisContext, FileInfo
+from .decision_engine import DecisionEngine, _issue_type_from_finding
+from .decision_subjects import _subject_key_from_finding
+from .evidence import Evidence
+from .findings import Finding, FixOption, ProofState, Severity
+
+if TYPE_CHECKING:
+    from ..project.project_context import ProjectContext
+    from .decision_models import DecisionCandidate
 
 
 class FixMode(Enum):
@@ -39,8 +39,8 @@ class AnalysisCoordinator:
 
     def __init__(
         self,
-        config: Optional[AnalysisConfig] = None,
-        project_context: Optional["ProjectContext"] = None,
+        config: AnalysisConfig | None = None,
+        project_context: ProjectContext | None = None,
     ):
         """
         Initialize coordinator.
@@ -66,14 +66,19 @@ class AnalysisCoordinator:
         from ..analyzers.rust import RustAnalyzer
         from ..fixers.imports import ImportFixer
 
-        self._analyzers = [ImportAnalyzer(), LintAnalyzer(), ResidueAnalyzer(), RustAnalyzer()]
+        self._analyzers = [
+            ImportAnalyzer(),
+            LintAnalyzer(),
+            ResidueAnalyzer(),
+            RustAnalyzer(),
+        ]
         self._fixers = [ImportFixer()]
 
     def analyze(
         self,
         paths: list[Path],
-        analyzers: Optional[list[str]] = None,
-    ) -> "AnalysisResult":
+        analyzers: list[str] | None = None,
+    ) -> AnalysisResult:
         """
         Run analysis on paths.
 
@@ -129,19 +134,22 @@ class AnalysisCoordinator:
         if self.config.check_syntax:
             for path, file_info in file_infos.items():
                 if file_info.has_syntax_errors:
-                    all_findings.append(Finding.create(
-                        type="syntax_error",
-                        severity=Severity.ERROR,
-                        file=path,
-                        message=f"{path.name}: contains syntax errors",
-                        fixable=False,
-                        auto_fix_safe=False,
-                        proof_state=ProofState.PROVEN_UNUSED.value,
-                    ))
+                    all_findings.append(
+                        Finding.create(
+                            type="syntax_error",
+                            severity=Severity.ERROR,
+                            file=path,
+                            message=f"{path.name}: contains syntax errors",
+                            fixable=False,
+                            auto_fix_safe=False,
+                            proof_state=ProofState.PROVEN_UNUSED.value,
+                        )
+                    )
 
         # Type checking (gated by config.check_types / config.use_pyright)
         if self.config.check_types:
             from ..analyzers.types import check_mypy
+
             try:
                 all_findings.extend(check_mypy(context))
             except Exception as e:
@@ -149,6 +157,7 @@ class AnalysisCoordinator:
 
         if self.config.use_pyright:
             from ..analyzers.types import check_pyright
+
             try:
                 all_findings.extend(check_pyright(context))
             except Exception as e:
@@ -182,8 +191,8 @@ class AnalysisCoordinator:
         findings: list[Finding],
         context: AnalysisContext,
         mode: FixMode = FixMode.SAFE_AUTO,
-        decisions: Optional[dict[str, str]] = None,
-        candidates: Optional[list[DecisionCandidate]] = None,
+        decisions: dict[str, str] | None = None,
+        candidates: list[DecisionCandidate] | None = None,
     ) -> dict[Path, FixResult]:
         """
         Fix findings.
@@ -235,7 +244,8 @@ class AnalysisCoordinator:
             ):
                 candidate = candidate_by_finding_id.get(finding.id)
                 issue_type = (
-                    candidate.issue_type if candidate is not None
+                    candidate.issue_type
+                    if candidate is not None
                     else _issue_type_from_finding(finding)
                 )
                 routed_finding = _finding_with_issue_type(finding, issue_type)
@@ -316,10 +326,14 @@ class AnalysisCoordinator:
         include_patterns = list(self.config.include_patterns)
         if self.config.check_rust:
             for pat in [
-                "*.rs", "**/*.rs",
-                "Cargo.toml", "**/Cargo.toml",
-                "clippy.toml", "**/clippy.toml",
-                "rustfmt.toml", "**/rustfmt.toml",
+                "*.rs",
+                "**/*.rs",
+                "Cargo.toml",
+                "**/Cargo.toml",
+                "clippy.toml",
+                "**/clippy.toml",
+                "rustfmt.toml",
+                "**/rustfmt.toml",
             ]:
                 if pat not in include_patterns:
                     include_patterns.append(pat)
@@ -346,32 +360,28 @@ class AnalysisCoordinator:
                             files.append(file_path)
         return sorted(set(files))
 
-    def _is_included(self, path: Path, project_root: Optional[Path]) -> bool:
+    def _is_included(self, path: Path, project_root: Path | None) -> bool:
         """Return whether an explicit file matches configured include patterns."""
         if not self.config.include_patterns:
             return True
         candidates = [path]
         if project_root is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 candidates = [path.relative_to(project_root)]
-            except ValueError:
-                pass
         return any(
             candidate.match(pattern)
             for candidate in candidates
             for pattern in self.config.include_patterns
         )
 
-    def _is_excluded(self, path: Path, project_root: Optional[Path]) -> bool:
+    def _is_excluded(self, path: Path, project_root: Path | None) -> bool:
         """Return whether a file matches configured exclude patterns."""
         if is_generated_artifact(path):
             return True
         candidates = [path]
         if project_root is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 candidates = [path.relative_to(project_root)]
-            except ValueError:
-                pass
         return any(
             _matches_path_pattern(candidate, pattern)
             for candidate in candidates
@@ -399,7 +409,7 @@ class AnalysisCoordinator:
 
         return paths[0].parent if paths[0].is_file() else paths[0]
 
-    def _get_analyzers(self, names: Optional[list[str]] = None) -> list:
+    def _get_analyzers(self, names: list[str] | None = None) -> list:
         """Get analyzers to run."""
         from ..analyzers.imports import ImportAnalyzer
         from ..analyzers.lint import LintAnalyzer
@@ -444,7 +454,7 @@ class AnalysisCoordinator:
         finding: Finding,
         fixer,
         context: AnalysisContext,
-    ) -> Optional[FixOption]:
+    ) -> FixOption | None:
         """Get user's choice for interactive mode. Prompts user, doesn't assume."""
         if not sys.stdin.isatty():
             print(
@@ -475,8 +485,7 @@ class AnalysisCoordinator:
                 if 0 <= idx < len(options):
                     print(f"  → Selected: {options[idx].label}")
                     return options[idx]
-                else:
-                    print(f"  Invalid: choose 1-{len(options)} or 's'")
+                print(f"  Invalid: choose 1-{len(options)} or 's'")
             except ValueError:
                 print(f"  Invalid: choose 1-{len(options)} or 's'")
             except EOFError:
@@ -523,7 +532,9 @@ def _finding_with_issue_type(finding: Finding, issue_type: str) -> Finding:
     return finding
 
 
-def _destructive_option(fixer, finding: Finding, context: AnalysisContext) -> FixOption | None:
+def _destructive_option(
+    fixer, finding: Finding, context: AnalysisContext
+) -> FixOption | None:
     """Select the first destructive option after DecisionEngine safety approval."""
     for option in fixer.get_options(finding, context):
         if option.action == "delete" or not option.is_safe:
@@ -556,9 +567,7 @@ def _add_cross_file_evidence(findings: list[Finding], context: AnalysisContext):
 
         usages = trace_symbol_usage(import_name, context.files, context.graph)
 
-        other_file_usages = [
-            u for u in usages if u.file != finding.file
-        ]
+        other_file_usages = [u for u in usages if u.file != finding.file]
 
         if other_file_usages:
             usage_files = sorted({str(u.file.name) for u in other_file_usages})
@@ -570,7 +579,7 @@ def _add_cross_file_evidence(findings: list[Finding], context: AnalysisContext):
                 subject=import_name,
                 polarity="context",
                 claim=f"Symbol '{import_name}' used in {len(usage_files)} other "
-                      f"project file(s): {', '.join(usage_files[:3])}",
+                f"project file(s): {', '.join(usage_files[:3])}",
                 strength=0.30,
                 data={
                     "symbol": import_name,
@@ -579,9 +588,7 @@ def _add_cross_file_evidence(findings: list[Finding], context: AnalysisContext):
                 },
             )
             context.add_evidence(evidence)
-            finding.data.setdefault("evidence", []).append(
-                {"id": evidence.id}
-            )
+            finding.data.setdefault("evidence", []).append({"id": evidence.id})
 
 
 def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
@@ -607,7 +614,10 @@ def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
 
     deduplicated: list[Finding] = []
     for finding in findings:
-        if finding.type in ("unused_import_file", "unused_import") and finding.lint_source != "ruff":
+        if (
+            finding.type in ("unused_import_file", "unused_import")
+            and finding.lint_source != "ruff"
+        ):
             sk = _subject_key_from_finding(finding)
             if sk is not None and sk.binding_key in ruff_subject_keys:
                 # Ruff already covers this subject; skip the local duplicate

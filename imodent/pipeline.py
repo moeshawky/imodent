@@ -4,8 +4,7 @@ Processing Pipeline for Indentation Fixing.
 Orchestrates the detection, fixing, and validation steps.
 """
 
-from typing import Optional
-from .interfaces import LanguageStrategy, FixResult
+from .interfaces import FixResult, LanguageStrategy
 from .registry import StrategyRegistry
 
 
@@ -28,9 +27,9 @@ class FixPipeline:
             indent_size: Default formatting size for fixing.
         """
         self.indent_size = indent_size
-        self._strategy: Optional[LanguageStrategy] = None
+        self._strategy: LanguageStrategy | None = None
 
-    def detect(self, content: str) -> Optional[LanguageStrategy]:
+    def detect(self, content: str) -> LanguageStrategy | None:
         """
         Detect the language for the given content.
 
@@ -55,7 +54,7 @@ class FixPipeline:
     def fix(
         self,
         content: str,
-        strategy: Optional[LanguageStrategy] = None,
+        strategy: LanguageStrategy | None = None,
         force: bool = False,
     ) -> FixResult:
         """Fix the code content.
@@ -82,12 +81,10 @@ class FixPipeline:
             )
 
         # Fix the content
-        result = strategy.fix(content, self.indent_size, force=force)
-
-        return result
+        return strategy.fix(content, self.indent_size, force=force)
 
     def validate(
-        self, content: str, strategy: Optional[LanguageStrategy] = None
+        self, content: str, strategy: LanguageStrategy | None = None
     ) -> FixResult:
         """
         Validate the content without fixing.

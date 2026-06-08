@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
 
 [project]
 name = "imodent"
@@ -48,6 +48,7 @@ dev = [
     "pytest-asyncio>=0.21",
     "pytest-cov>=6.0",
     "ruff>=0.8",
+    "mypy>=1.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -57,7 +58,7 @@ include = ["imodent*"]
 [tool.setuptools.package-data]
 imodent = ["py.typed"]
 
-# ── Ruff (linter) ───────────────────────────────────────
+# ── Ruff (linter + formatter) ────────────────────────────
 [tool.ruff]
 target-version = "py310"
 line-length = 88
@@ -67,23 +68,99 @@ exclude = [
     "__pycache__",
     "build",
     "dist",
+    ".tox",
+    ".mypy_cache",
+    ".ruff_cache",
 ]
 
 [tool.ruff.lint]
 select = [
     "E", "W",      # pycodestyle errors + warnings
     "F",           # pyflakes (undefined names, unused imports)
+    "I",           # isort (import sorting)
+    "UP",          # pyupgrade (modernize syntax)
     "B",           # flake8-bugbear (common bug patterns)
+    "SIM",         # flake8-simplify (simplify code)
+    "RUF",         # Ruff-specific rules
+    "S",           # flake8-bandit (security)
+    "C4",          # flake8-comprehensions
+    "RET",         # flake8-return
+    "PTH",         # flake8-use-pathlib
+    "TC",          # flake8-type-checking
+    "FA",          # flake8-future-annotations
+    "ERA",         # eradicate (commented code)
+    "PD",          # pandas-vet (not applicable but safe)
 ]
-ignore = ["E501"]  # line length handled by formatter (project uses long docstrings)
+ignore = ["E501"]  # line length handled by formatter
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]       # allow assert in tests
-"__init__.py" = ["F401"]         # allow unused imports in __init__ (re-exports)
+"tests/**/*.py" = ["S101", "ERA001"]       # allow assert in tests, allow commented code
+"__init__.py" = ["F401"]                    # allow unused imports in __init__ (re-exports)
+"imodent/cli.py" = ["S101"]                 # CLI may use assert
+"imodent/analysis/context.py" = ["TC001", "TC003"] # runtime imports for type tests
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+# ── mypy (type checker) ─────────────────────────────────
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_ignores = false
+show_error_codes = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = false
+warn_redundant_casts = false
+warn_no_return = false
+implicit_reexport = true
+ignore_missing_imports = true
+allow_untyped_globals = true
+allow_untyped_calls = true
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "var-annotated",
+    "type-abstract",
+    "method-assign",
+    "union-attr",
+    "no-any-return",
+    "import-untyped",
+]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "imodent.analysis.decision_proof",
+    "imodent.project.config",
+]
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = [
+    "imodent.graph.dependency",
+    "imodent.analyzers.lint",
+    "imodent.analyzers.imports",
+    "imodent.advisors.architecture",
+    "imodent.registry",
+    "imodent.strategies.yaml",
+    "imodent.strategies.python",
+    "imodent.strategies.jsonl",
+    "imodent.strategies.json",
+]
+ignore_missing_imports = true
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "imodent.analysis.coordinator"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_return_any = false
 
 # ── pytest ──────────────────────────────────────────────
 [tool.pytest.ini_options]
@@ -94,12 +171,20 @@ addopts = "-ra -q --strict-markers --tb=short"
 # ── coverage ────────────────────────────────────────────
 [tool.coverage.run]
 source = ["imodent"]
-omit = ["tests/*"]
+omit = ["tests/*", "*/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true
+fail_under = 80
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "raise AssertionError",
+]
+
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20260518",
 ]
