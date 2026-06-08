@@ -64,4 +64,7 @@ ROOT_CAUSE_ANALYSIS.md
 
 # Local ix watcher state
 .ix/codegraph_sync_state.json
+.ix/shard.ix
+.ix/beacon.json
 .ix/*.delta
+.codegraph/
