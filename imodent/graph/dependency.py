@@ -2,14 +2,14 @@
 
 import ast
 from pathlib import Path
-from typing import Optional
+
 from ..analysis.context import DependencyGraph, FileInfo, SymbolUsage
 from ..analysis.findings import Location
-from .imports import extract_imports, resolve_module_name, ImportInfo
+from .imports import ImportInfo, extract_imports, resolve_module_name
 
 
 def build_dependency_graph(
-    files: dict[Path, FileInfo], project_root: Optional[Path] = None
+    files: dict[Path, FileInfo], project_root: Path | None = None
 ) -> DependencyGraph:
     """Build dependency graph from analyzed files.
 
@@ -22,10 +22,7 @@ def build_dependency_graph(
     """
     if project_root is None:
         # Guess project root from file paths
-        if files:
-            project_root = _find_common_root(files.keys())
-        else:
-            project_root = Path.cwd()
+        project_root = _find_common_root(files.keys()) if files else Path.cwd()
 
     graph = DependencyGraph()
 
@@ -77,7 +74,7 @@ def _find_common_root(paths: list[Path]) -> Path:
 
 def _resolve_import(
     imp: ImportInfo, project_root: Path, graph: DependencyGraph
-) -> Optional[str]:
+) -> str | None:
     """Resolve an import to a module name.
 
     Args:
@@ -132,17 +129,16 @@ def find_unused_imports(
         # For third-party modules, we check if they're imported anywhere
         # For local modules, we check if they're actually used
 
-        if not importers:
+        if not importers and is_local:
             # No one imports this - could be an entry point or unused
-            if is_local:
-                unused.append(
-                    {
-                        "module": module,
-                        "imported_by": [],
-                        "is_third_party": False,
-                        "file": graph.module_to_file.get(module),
-                    }
-                )
+            unused.append(
+                {
+                    "module": module,
+                    "imported_by": [],
+                    "is_third_party": False,
+                    "file": graph.module_to_file.get(module),
+                }
+            )
 
     return unused
 
@@ -167,16 +163,9 @@ def trace_symbol_usage(
             continue
 
         for node in ast.walk(file_info.ast_tree):
-            if isinstance(node, ast.Name) and node.id == symbol:
-                usages.append(
-                    SymbolUsage(
-                        symbol=symbol,
-                        file=path,
-                        location=Location(line=node.lineno),
-                        context="reference",
-                    )
-                )
-            elif isinstance(node, ast.Attribute) and node.attr == symbol:
+            if (isinstance(node, ast.Name) and node.id == symbol) or (
+                isinstance(node, ast.Attribute) and node.attr == symbol
+            ):
                 usages.append(
                     SymbolUsage(
                         symbol=symbol,

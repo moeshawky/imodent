@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Set as typing_Set  # For type hints
 
 from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding
@@ -31,12 +30,12 @@ class Analyzer(ABC):
 
     @property
     @abstractmethod
-    def capabilities(self) -> typing_Set[AnalyzerCapability]:
+    def capabilities(self) -> set[AnalyzerCapability]:
         """What this analyzer can detect."""
         ...
 
     @property
-    def languages(self) -> typing_Set[str]:
+    def languages(self) -> set[str]:
         """Languages this analyzer handles. Empty = all languages."""
         return set()
 

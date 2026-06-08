@@ -8,7 +8,8 @@ SCAN — multi-file analysis: imports, lint, architecture (--analyze)
 import argparse
 import shutil
 import sys
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 try:
@@ -19,13 +20,12 @@ except PackageNotFoundError:
 # Registration imports: these modules register side-effect strategies/analyzers into global registries. Removing them breaks the registry. Also: StrategyRegistry, FixPipeline, ProjectContext, AnalysisCoordinator are actual runtime dependencies.
 
 # Registration side-effects (do not remove)
-from .pipeline import FixPipeline
-from .registry import StrategyRegistry
 from .analysis.coordinator import AnalysisCoordinator, FixMode
 from .analysis.findings import Severity
+from .pipeline import FixPipeline
 from .project.discovery import is_generated_artifact
 from .project.project_context import ProjectContext
-
+from .registry import StrategyRegistry
 
 # ---------------------------------------------------------------------------
 # Mode 1: FIX — reformat files (backward-compatible)
@@ -273,8 +273,11 @@ def analyze_files(
     elif fix and not check_only:
         fix_mode = FixMode.ALL_AUTO if config.auto_fix_all else FixMode.SAFE_AUTO
         print("\n" + "━" * 60)
-        print("AUTO-FIX MODE — safe fixes only" if fix_mode == FixMode.SAFE_AUTO
-              else "AUTO-FIX MODE — all fixes")
+        print(
+            "AUTO-FIX MODE — safe fixes only"
+            if fix_mode == FixMode.SAFE_AUTO
+            else "AUTO-FIX MODE — all fixes"
+        )
         print("━" * 60)
     else:
         fix_mode = None
@@ -354,11 +357,17 @@ def _display_confidence_output(result, verbose: bool = False) -> None:
         if c.location:
             location_str = f":{c.location.line}"
 
-        print(f"\n[{i}] {c.issue_type.upper()} — {c.confidence_label} confidence ({c.confidence:.2f})")
+        print(
+            f"\n[{i}] {c.issue_type.upper()} — {c.confidence_label} confidence ({c.confidence:.2f})"
+        )
         print(f"    path:      {rel}{location_str}")
-        print(f"    subject:   {sk.kind}  module={sk.module}  name={sk.name}  alias={sk.alias}")
+        print(
+            f"    subject:   {sk.kind}  module={sk.module}  name={sk.name}  alias={sk.alias}"
+        )
         print(f"    proof:     {c.proof_state}")
-        print(f"    findings:  {', '.join(c.finding_ids) if c.finding_ids else '(none)'}")
+        print(
+            f"    findings:  {', '.join(c.finding_ids) if c.finding_ids else '(none)'}"
+        )
 
         if c.evidence_for:
             kinds = sorted({e.kind for e in c.evidence_for})
@@ -371,13 +380,19 @@ def _display_confidence_output(result, verbose: bool = False) -> None:
             print(f"    actions:   {' | '.join(a.label for a in c.suggested_actions)}")
 
         print(f"    destructive: {'ALLOWED' if c.destructive_allowed else 'BLOCKED'}")
-        print(f"    user decision: {'REQUIRED' if c.requires_user_decision else 'not required'}")
+        print(
+            f"    user decision: {'REQUIRED' if c.requires_user_decision else 'not required'}"
+        )
 
         if verbose:
             for ev in c.evidence_for[:5]:
-                print(f"       + {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})")
+                print(
+                    f"       + {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})"
+                )
             for ev in c.evidence_against[:5]:
-                print(f"       - {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})")
+                print(
+                    f"       - {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})"
+                )
 
 
 DESCRIPTION = """\

@@ -1,0 +1,54 @@
+# Dependabot Configuration
+# Weekly dependency updates for Python packages and GitHub Actions
+
+version: 2
+updates:
+  # Python dependencies (pyproject.toml + uv.lock)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(pip)"
+      include: "scope"
+    groups:
+      development-dependencies:
+        patterns:
+          - "coverage*"
+          - "pre-commit*"
+          - "pytest*"
+          - "ruff*"
+          - "mypy*"
+          - "types-*"
+        update-types:
+          - "minor"
+          - "patch"
+      core-dependencies:
+        patterns:
+          - "black*"
+          - "ruamel.yaml*"
+          - "pyyaml*"
+          - "json-repair*"
+          - "tomli*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps(github-actions)"
+      include: "scope"

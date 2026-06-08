@@ -7,13 +7,17 @@ wire, export, register, test, or quarantine.
 
 from __future__ import annotations
 
-import re
 import ast
-from pathlib import Path
+import re
+from typing import TYPE_CHECKING
 
-from .base import Analyzer, AnalyzerCapability
-from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding, Location, Severity
+from .base import Analyzer, AnalyzerCapability
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ..analysis.context import AnalysisContext
 
 
 class ResidueAnalyzer(Analyzer):
@@ -41,19 +45,19 @@ class ResidueAnalyzer(Analyzer):
             if lint_finding is not None:
                 findings.append(lint_finding)
 
-            residue_markers = self._find_regex(
-                context, r"#\s*(TODO|FIXME|HACK)\b"
-            )
+            residue_markers = self._find_regex(context, r"#\s*(TODO|FIXME|HACK)\b")
             if residue_markers:
-                findings.append(Finding.create(
-                    type="residue_marker",
-                    severity=Severity.INFO,
-                    file=residue_markers[0],
-                    location=Location(line=residue_markers[1]),
-                    message=f"Residue marker: {residue_markers[2]}",
-                    fixable=False,
-                    auto_fix_safe=False,
-                ))
+                findings.append(
+                    Finding.create(
+                        type="residue_marker",
+                        severity=Severity.INFO,
+                        file=residue_markers[0],
+                        location=Location(line=residue_markers[1]),
+                        message=f"Residue marker: {residue_markers[2]}",
+                        fixable=False,
+                        auto_fix_safe=False,
+                    )
+                )
 
         return findings
 
@@ -158,8 +162,7 @@ class ResidueAnalyzer(Analyzer):
                     continue
                 func = node.func
                 if not (
-                    isinstance(func, ast.Attribute)
-                    and func.attr == "add_argument"
+                    isinstance(func, ast.Attribute) and func.attr == "add_argument"
                 ):
                     continue
                 for arg in node.args:

@@ -2,11 +2,11 @@
 
 import ast
 
-from .base import Fixer
 from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding, FixOption
 from ..analyzers.imports import _is_single_alias_import_statement
 from ..interfaces import FixResult
+from .base import Fixer
 
 
 class ImportFixer(Fixer):
@@ -22,11 +22,7 @@ class ImportFixer(Fixer):
 
     def can_auto_fix(self, finding: Finding) -> bool:
         """Check if finding can be safely auto-fixed."""
-        if finding.type == "duplicate_import":
-            return True  # Safe to remove duplicates
-
-        # Unused imports need review - might be for typing, __all__, etc.
-        return False
+        return finding.type == "duplicate_import"
 
     def get_options(
         self, finding: Finding, context: AnalysisContext
@@ -117,7 +113,7 @@ class ImportFixer(Fixer):
         """Apply the selected fix option."""
         if option.action == "delete":
             return self._remove_import(finding, content)
-        elif option.action == "keep":
+        if option.action == "keep":
             # Keep the import - no change needed
             return FixResult(
                 success=True,
@@ -127,7 +123,7 @@ class ImportFixer(Fixer):
                 original_valid=True,
                 fixed_valid=True,
             )
-        elif option.action == "investigate":
+        if option.action == "investigate":
             # Return with investigation request
             return FixResult(
                 success=False,
@@ -137,7 +133,7 @@ class ImportFixer(Fixer):
                 original_valid=True,
                 fixed_valid=True,
             )
-        elif option.action == "use":
+        if option.action == "use":
             # Mark as used - no change
             return FixResult(
                 success=True,

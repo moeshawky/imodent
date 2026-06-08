@@ -6,9 +6,12 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ..analysis.context import AnalysisContext
-from ..analysis.findings import Finding, Severity, Location, ProofState
+from ..analysis.findings import Finding, Location, ProofState, Severity
+
+if TYPE_CHECKING:
+    from ..analysis.context import AnalysisContext
 
 
 def check_mypy(context: AnalysisContext) -> list[Finding]:
@@ -17,7 +20,8 @@ def check_mypy(context: AnalysisContext) -> list[Finding]:
         return []
 
     py_files = [
-        path for path, info in context.files.items()
+        path
+        for path, info in context.files.items()
         if info.language == "python" and info.ast_tree is not None
     ]
     if not py_files:
@@ -39,7 +43,8 @@ def check_pyright(context: AnalysisContext) -> list[Finding]:
         return []
 
     py_files = [
-        path for path, info in context.files.items()
+        path
+        for path, info in context.files.items()
         if info.language == "python" and info.ast_tree is not None
     ]
     if not py_files:
@@ -58,7 +63,7 @@ def _run_type_checker(
 ) -> list[Finding]:
     project_root = context.project_root or Path.cwd()
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603
             command,
             cwd=str(project_root),
             text=True,
@@ -122,29 +127,33 @@ def _parse_mypy_output(stdout: str, stderr: str) -> list[Finding]:
         error_code = ""
         if "[" in message and message.rstrip().endswith("]"):
             bracket = message.rfind("[")
-            error_code = message[bracket + 1:].rstrip("]")
+            error_code = message[bracket + 1 :].rstrip("]")
             message = message[:bracket].strip()
 
-        findings.append(Finding.create(
-            type="type_error",
-            severity=severity,
-            file=file_path,
-            location=Location(line=line_no, column=col_offset),
-            message=f"mypy: {message}",
-            fixable=False,
-            auto_fix_safe=False,
-            proof_state=ProofState.EXTERNALLY_VERIFIED.value,
-            data={"tool": "mypy", "code": error_code} if error_code else None,
-        ))
+        findings.append(
+            Finding.create(
+                type="type_error",
+                severity=severity,
+                file=file_path,
+                location=Location(line=line_no, column=col_offset),
+                message=f"mypy: {message}",
+                fixable=False,
+                auto_fix_safe=False,
+                proof_state=ProofState.EXTERNALLY_VERIFIED.value,
+                data={"tool": "mypy", "code": error_code} if error_code else None,
+            )
+        )
     if stderr.strip():
-        findings.append(Finding.create(
-            type="type_check_failure",
-            severity=Severity.WARNING,
-            file=Path.cwd(),
-            message=f"mypy stderr: {stderr.strip()[:200]}",
-            fixable=False,
-            auto_fix_safe=False,
-        ))
+        findings.append(
+            Finding.create(
+                type="type_check_failure",
+                severity=Severity.WARNING,
+                file=Path.cwd(),
+                message=f"mypy stderr: {stderr.strip()[:200]}",
+                fixable=False,
+                auto_fix_safe=False,
+            )
+        )
     return findings
 
 
@@ -170,15 +179,17 @@ def _parse_pyright_output(stdout: str) -> list[Finding]:
         elif severity_str == "warning":
             severity = Severity.WARNING
 
-        findings.append(Finding.create(
-            type="type_error",
-            severity=severity,
-            file=file_path,
-            location=Location(line=line_no, column=col_offset),
-            message=f"pyright: {message}",
-            fixable=False,
-            auto_fix_safe=False,
-            proof_state=ProofState.EXTERNALLY_VERIFIED.value,
-            data={"tool": "pyright", "code": rule} if rule else None,
-        ))
+        findings.append(
+            Finding.create(
+                type="type_error",
+                severity=severity,
+                file=file_path,
+                location=Location(line=line_no, column=col_offset),
+                message=f"pyright: {message}",
+                fixable=False,
+                auto_fix_safe=False,
+                proof_state=ProofState.EXTERNALLY_VERIFIED.value,
+                data={"tool": "pyright", "code": rule} if rule else None,
+            )
+        )
     return findings

@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write  # for trusted publishing
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: uv
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Verify quality gates
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src/
+          uv run pytest --cov
+
+      - name: Build package
+        run: uv build
+
+      - name: Check package
+        run: uv run twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true

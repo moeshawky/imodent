@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import ast
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .base import Analyzer, AnalyzerCapability
-from ..analysis.context import AnalysisContext
+from ..analysis.decision_subjects import subject_key_for_lint
 from ..analysis.evidence import Evidence
 from ..analysis.findings import Finding, Location, Severity
-from ..analysis.decisions import subject_key_for_lint, SubjectKey
+from .base import Analyzer, AnalyzerCapability
+
+if TYPE_CHECKING:
+    from ..analysis.context import AnalysisContext
+    from ..analysis.decision_models import SubjectKey
 
 
 class LintAnalyzer(Analyzer):
@@ -82,7 +86,7 @@ class LintAnalyzer(Analyzer):
             *[str(path) for path in files],
         ]
         try:
-            completed = subprocess.run(
+            completed = subprocess.run(  # noqa: S603
                 command,
                 cwd=str(project_root) if isinstance(project_root, Path) else None,
                 text=True,
@@ -172,9 +176,11 @@ class LintAnalyzer(Analyzer):
             proof_state_raw = _proof_state_for_ruff_code(code, file_path)
 
             # Get source line for accurate import-form detection
-            source_lines = getattr(
-                context.files.get(file_path), "content", ""
-            ).split("\n") if file_path in context.files else []
+            source_lines = (
+                getattr(context.files.get(file_path), "content", "").split("\n")
+                if file_path in context.files
+                else []
+            )
             source_line = ""
             line_num = int(location_data.get("row") or 1)
             if 1 <= line_num <= len(source_lines):
@@ -303,7 +309,7 @@ def _first_backtick_value(message: str) -> str:
 
 def _subject_key_from_diagnostic(
     diagnostic: dict, file_path: Path, code: str, source_line: str = ""
-) -> "SubjectKey | None":
+) -> SubjectKey | None:
     """Build a SubjectKey from a Ruff diagnostic for fusion support."""
     if code == "F401":
         message = diagnostic.get("message") or ""
@@ -395,7 +401,9 @@ def _is_single_alias_source_line(source_line: str) -> bool:
         tree = ast.parse(source_line.lstrip())
     except SyntaxError:
         return False
-    if len(tree.body) != 1 or not isinstance(tree.body[0], (ast.Import, ast.ImportFrom)):
+    if len(tree.body) != 1 or not isinstance(
+        tree.body[0], (ast.Import, ast.ImportFrom)
+    ):
         return False
     node = tree.body[0]
     if getattr(node, "end_lineno", node.lineno) != node.lineno:

@@ -1,10 +1,9 @@
 """Base classes for advisors."""
 
 from abc import ABC, abstractmethod
-from typing import List
 
 from ..analysis.context import AnalysisContext
-from ..analysis.findings import Finding, Advice
+from ..analysis.findings import Advice, Finding
 
 
 class Advisor(ABC):
@@ -22,7 +21,7 @@ class Advisor(ABC):
         return 5
 
     @abstractmethod
-    def should_advise(self, findings: List[Finding], context: AnalysisContext) -> bool:
+    def should_advise(self, findings: list[Finding], context: AnalysisContext) -> bool:
         """
         Check if advisor has relevant advice.
 
@@ -36,7 +35,7 @@ class Advisor(ABC):
         ...
 
     @abstractmethod
-    def advise(self, findings: List[Finding], context: AnalysisContext) -> List[Advice]:
+    def advise(self, findings: list[Finding], context: AnalysisContext) -> list[Advice]:
         """
         Generate advice based on findings.
 

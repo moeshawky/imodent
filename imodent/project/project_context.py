@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-import sys
-from typing import Optional
 
 from ..analysis.context import AnalysisConfig
-from .config import load_config, _get_toml_loader
+from .config import _get_toml_loader, load_config
 
-
-PROJECT_MARKERS = ["pyproject.toml", "setup.py", ".git", "requirements.txt", "setup.cfg"]
+PROJECT_MARKERS = [
+    "pyproject.toml",
+    "setup.py",
+    ".git",
+    "requirements.txt",
+    "setup.cfg",
+]
 
 
 @dataclass
@@ -41,7 +45,7 @@ class ProjectContext:
             self.project_name = _discover_project_name(self.project_root)
 
     @classmethod
-    def discover(cls, path: Path) -> "ProjectContext":
+    def discover(cls, path: Path) -> ProjectContext:
         """Discover project context from a file or directory path.
 
         Walks up from the given path looking for project markers.
@@ -62,13 +66,13 @@ class ProjectContext:
         )
 
     @classmethod
-    def from_root(cls, root: Path) -> "ProjectContext":
+    def from_root(cls, root: Path) -> ProjectContext:
         """Create project context from an explicit project root."""
         config = load_config(root)
         return cls(project_root=root, config=config, has_project_markers=True)
 
 
-def _find_project_root(path: Path) -> Optional[Path]:
+def _find_project_root(path: Path) -> Path | None:
     """Walk up from path to find project root using markers."""
     current = path.resolve()
     if not current.is_dir():
@@ -90,7 +94,7 @@ def _discover_project_name(project_root: Path) -> str:
         loader = _get_toml_loader()
         if loader is not None:
             try:
-                with open(pyproject, "rb") as f:
+                with pyproject.open("rb") as f:
                     data = loader(f)
                 name = data.get("project", {}).get("name", "")
                 if name:
