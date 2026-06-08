@@ -131,12 +131,14 @@ if TYPE_CHECKING:
         AnalysisResult,
         FixMode,
     )
+    from .analysis.evidence import Evidence
     from .analysis.findings import (
         Advice,
         Change,
         Finding,
         FixOption,
         Location,
+        ProofState,
         Severity,
     )
 
@@ -153,9 +155,11 @@ def __getattr__(name: str):
         "FixMode": ".analysis.coordinator",
         "Advice": ".analysis.findings",
         "Change": ".analysis.findings",
+        "Evidence": ".analysis.evidence",
         "Finding": ".analysis.findings",
         "FixOption": ".analysis.findings",
         "Location": ".analysis.findings",
+        "ProofState": ".analysis.findings",
         "Severity": ".analysis.findings",
     }
     if name in _lazy:
@@ -176,6 +180,7 @@ __all__ = [
     "AnalysisResult",
     "Change",
     "DependencyGraph",
+    "Evidence",
     "FileInfo",
     "Finding",
     "FixMode",
@@ -184,5 +189,6 @@ __all__ = [
     "LanguageStrategy",
     "Location",
     "Processor",
+    "ProofState",
     "Severity",
 ]
