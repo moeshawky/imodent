@@ -74,8 +74,8 @@ def _destructive_allowed(candidate: DecisionCandidate, group: list) -> bool:
     if candidate.issue_type == "unused_import":
         for finding in group:
             import_info = getattr(finding, "data", {}).get("import_info", {})
-            is_single_alias = import_info.get("single_alias", False)
-            if is_single_alias and not _has_suppression_markers(finding):
+            has_import_info = bool(import_info.get("name") or import_info.get("module"))
+            if has_import_info and not _has_suppression_markers(finding):
                 return True
 
     return False

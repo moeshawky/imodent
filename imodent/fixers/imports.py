@@ -9,6 +9,99 @@ from ..interfaces import FixResult
 from .base import Fixer
 
 
+def _parse_content_or_none(content: str):
+    """Parse Python source, returning the AST tree or None on syntax error."""
+    try:
+        return ast.parse(content)
+    except SyntaxError:
+        return None
+
+
+def _reconstruct_import_line(
+    node: ast.Import | ast.ImportFrom,
+    remaining: list[ast.alias],
+    content: str,
+    line: int,
+) -> str:
+    """Rebuild an import line with only the given aliases.
+
+    Preserves original indentation. For single remaining alias on a from-import,
+    emits a one-line form without parentheses. For multiple aliases, wraps in
+    parentheses matching the original line's continuation style.
+    """
+    indent = _extract_indent(content, line)
+
+    if isinstance(node, ast.ImportFrom):
+        names_str = ", ".join(
+            _format_alias(n.name, n.asname) for n in remaining
+        )
+        if len(remaining) == 1 and not _has_parens(content, line):
+            return f"{indent}from {node.module} import {names_str}"
+        return f"{indent}from {node.module} import ({names_str})"
+
+    names_str = ", ".join(
+        _format_alias(n.name, n.asname) for n in remaining
+    )
+    return f"{indent}import {names_str}"
+
+
+def _format_alias(name: str, asname: str | None) -> str:
+    """Format a single alias for an import statement."""
+    if asname:
+        return f"{name} as {asname}"
+    return name
+
+
+def _extract_indent(content: str, line: int) -> str:
+    """Extract leading whitespace from a line."""
+    lines = content.splitlines()
+    if line < 1 or line > len(lines):
+        return ""
+    return lines[line - 1][: len(lines[line - 1]) - len(lines[line - 1].lstrip())]
+
+
+def _has_parens(content: str, line: int) -> bool:
+    """Check if the import line at *line* uses parenthesized continuation."""
+    lines = content.splitlines()
+    if line < 1 or line > len(lines):
+        return False
+    stripped = lines[line - 1].strip()
+    return "(" in stripped or ")" in stripped
+
+
+def _drop_import_line(content: str, line_idx: int) -> FixResult:
+    """Remove an import line and a following blank line if present."""
+    lines = content.splitlines()
+    new_lines = lines[:line_idx] + lines[line_idx + 1 :]
+    if line_idx < len(new_lines) and not new_lines[line_idx].strip():
+        new_lines = new_lines[:line_idx] + new_lines[line_idx + 1 :]
+
+    new_content = "\n".join(new_lines)
+    if content.endswith("\n") and not new_content.endswith("\n"):
+        new_content += "\n"
+
+    try:
+        ast.parse(new_content)
+    except SyntaxError as e:
+        return FixResult(
+            success=False,
+            content=content,
+            errors=[f"Import line removal would make Python invalid: {e}"],
+            warnings=[],
+            original_valid=True,
+            fixed_valid=False,
+        )
+
+    return FixResult(
+        success=True,
+        content=new_content,
+        errors=[],
+        warnings=[],
+        original_valid=True,
+        fixed_valid=True,
+    )
+
+
 class ImportFixer(Fixer):
     """Fixer for import-related issues."""
 
@@ -181,15 +274,8 @@ class ImportFixer(Fixer):
             )
 
         if not _is_single_alias_import_statement(content, location.line):
-            return FixResult(
-                success=False,
-                content=content,
-                errors=[
-                    "Import shares a statement with other names; alias-level rewrite required"
-                ],
-                warnings=[],
-                original_valid=True,
-                fixed_valid=True,
+            return self._remove_alias_from_multi_import(
+                finding, content, lines, line_idx
             )
 
         # Remove the line
@@ -219,6 +305,119 @@ class ImportFixer(Fixer):
             success=True,
             content=new_content,
             errors=[],
+            warnings=[],
+            original_valid=True,
+            fixed_valid=True,
+        )
+
+    def _remove_alias_from_multi_import(
+        self,
+        finding: Finding,
+        content: str,
+        lines: list[str],
+        line_idx: int,
+    ) -> FixResult:
+        """Remove a single alias from a multi-import statement.
+
+        Rewrites ``from X import A, B, C`` to ``from X import A, C`` when
+        an unused alias is targeted for removal. If the target is the last
+        remaining alias, removes the entire import line.
+        """
+        import_info = finding.data.get("import_info", {})
+        name = import_info.get("name", "")
+        alias = import_info.get("alias")
+        target = alias or name
+
+        if not target:
+            return FixResult(
+                success=False,
+                content=content,
+                errors=["No target name or alias in import_info; cannot perform alias-level removal"],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
+            )
+
+        tree = _parse_content_or_none(content)
+        if tree is None:
+            return FixResult(
+                success=False,
+                content=content,
+                errors=["Cannot parse source to locate multi-import names"],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
+            )
+
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            if node.lineno != finding.location.line:
+                continue
+
+            if getattr(node, "end_lineno", node.lineno) != node.lineno:
+                return FixResult(
+                    success=False,
+                    content=content,
+                    errors=[
+                        "Import spans multiple lines; alias-level removal from "
+                        "multi-line imports is not yet supported. Remove the "
+                        "entire statement or edit manually."
+                    ],
+                    warnings=[],
+                    original_valid=True,
+                    fixed_valid=True,
+                )
+
+            remaining = [
+                n for n in node.names
+                if (n.asname or n.name) != target
+            ]
+
+            if len(remaining) == len(node.names):
+                return FixResult(
+                    success=False,
+                    content=content,
+                    errors=[f"Alias '{target}' not found in import statement at line {finding.location.line}"],
+                    warnings=[],
+                    original_valid=True,
+                    fixed_valid=True,
+                )
+
+            if not remaining:
+                return _drop_import_line(content, line_idx)
+
+            new_line = _reconstruct_import_line(node, remaining, content, line_idx)
+            new_lines = [*lines[:line_idx], new_line, *lines[line_idx + 1 :]]
+            new_content = "\n".join(new_lines)
+            if content.endswith("\n") and not new_content.endswith("\n"):
+                new_content += "\n"
+
+            try:
+                ast.parse(new_content)
+            except SyntaxError as e:
+                return FixResult(
+                    success=False,
+                    content=content,
+                    errors=[f"Alias removal would make Python invalid: {e}"],
+                    warnings=[],
+                    original_valid=True,
+                    fixed_valid=False,
+                )
+
+            return FixResult(
+                success=True,
+                content=new_content,
+                errors=[],
+                warnings=[f"Removed unused alias '{target}' from import at line {finding.location.line}"],
+                original_valid=True,
+                fixed_valid=True,
+            )
+
+        return FixResult(
+            success=False,
+            content=content,
+            errors=[f"No import node found at line {finding.location.line}"],
             warnings=[],
             original_valid=True,
             fixed_valid=True,
