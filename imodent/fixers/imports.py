@@ -1,4 +1,9 @@
-"""Import fixer - handles unused/duplicate imports with options."""
+"""Import fixer - handles unused/duplicate imports with options.
+
+When moedularizer is available, provides a 'refactor' action that
+uses cross-file dependency analysis to suggest wiring paths for
+imports that carry usage intent but no local references.
+"""
 
 import ast
 
@@ -7,6 +12,15 @@ from ..analysis.findings import Finding, FixOption
 from ..analyzers.imports import _is_single_alias_import_statement
 from ..interfaces import FixResult
 from .base import Fixer
+
+
+def _moedularizer_available() -> bool:
+    """Check whether moedularizer is installed and importable."""
+    try:
+        import moedularizer  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 def _parse_content_or_none(content: str):
@@ -32,16 +46,12 @@ def _reconstruct_import_line(
     indent = _extract_indent(content, line)
 
     if isinstance(node, ast.ImportFrom):
-        names_str = ", ".join(
-            _format_alias(n.name, n.asname) for n in remaining
-        )
+        names_str = ", ".join(_format_alias(n.name, n.asname) for n in remaining)
         if len(remaining) == 1 and not _has_parens(content, line):
             return f"{indent}from {node.module} import {names_str}"
         return f"{indent}from {node.module} import ({names_str})"
 
-    names_str = ", ".join(
-        _format_alias(n.name, n.asname) for n in remaining
-    )
+    names_str = ", ".join(_format_alias(n.name, n.asname) for n in remaining)
     return f"{indent}import {names_str}"
 
 
@@ -139,8 +149,23 @@ class ImportFixer(Fixer):
             import_info = finding.data.get("import_info", {})
             name = import_info.get("name", finding.import_name or "")
 
-            # Option 1: Investigate/wire. In LLM-authored codebases, an unused
-            # import is often evidence of unfinished intent, not trash.
+            # Option 1: Refactor / wire usage (when moedularizer is available).
+            # In agentic development, an unused import is evidence of
+            # unfinished intent — moedularizer traces dependencies and
+            # generates proper cross-module wiring.
+            if _moedularizer_available():
+                options.append(
+                    FixOption(
+                        id="refactor",
+                        label="Refactor / wire usage",
+                        description="Use moedularizer to trace dependencies and generate wiring",
+                        action="refactor",
+                        is_safe=True,
+                        requires_input=False,
+                    )
+                )
+
+            # Option 2: Investigate/wire manually.
             options.append(
                 FixOption(
                     id="investigate",
@@ -216,6 +241,8 @@ class ImportFixer(Fixer):
                 original_valid=True,
                 fixed_valid=True,
             )
+        if option.action == "refactor":
+            return self._refactor_import(finding, content)
         if option.action == "investigate":
             # Return with investigation request
             return FixResult(
@@ -332,7 +359,9 @@ class ImportFixer(Fixer):
             return FixResult(
                 success=False,
                 content=content,
-                errors=["No target name or alias in import_info; cannot perform alias-level removal"],
+                errors=[
+                    "No target name or alias in import_info; cannot perform alias-level removal"
+                ],
                 warnings=[],
                 original_valid=True,
                 fixed_valid=True,
@@ -369,16 +398,15 @@ class ImportFixer(Fixer):
                     fixed_valid=True,
                 )
 
-            remaining = [
-                n for n in node.names
-                if (n.asname or n.name) != target
-            ]
+            remaining = [n for n in node.names if (n.asname or n.name) != target]
 
             if len(remaining) == len(node.names):
                 return FixResult(
                     success=False,
                     content=content,
-                    errors=[f"Alias '{target}' not found in import statement at line {finding.location.line}"],
+                    errors=[
+                        f"Alias '{target}' not found in import statement at line {finding.location.line}"
+                    ],
                     warnings=[],
                     original_valid=True,
                     fixed_valid=True,
@@ -409,7 +437,9 @@ class ImportFixer(Fixer):
                 success=True,
                 content=new_content,
                 errors=[],
-                warnings=[f"Removed unused alias '{target}' from import at line {finding.location.line}"],
+                warnings=[
+                    f"Removed unused alias '{target}' from import at line {finding.location.line}"
+                ],
                 original_valid=True,
                 fixed_valid=True,
             )
@@ -419,6 +449,95 @@ class ImportFixer(Fixer):
             content=content,
             errors=[f"No import node found at line {finding.location.line}"],
             warnings=[],
+            original_valid=True,
+            fixed_valid=True,
+        )
+
+    def _refactor_import(self, finding: Finding, content: str) -> FixResult:
+        """Wire an import using moedularizer dependency analysis.
+
+        Uses moedularizer's ImodentBridge to trace cross-file usage
+        of the imported symbol and produces a structured report showing
+        how the import is used in other files — turning the finding
+        from a deletion candidate into a wiring guide.
+        """
+        try:
+            from moedularizer.imodent_bridge import ImodentBridge
+        except ImportError:
+            return FixResult(
+                success=False,
+                content=content,
+                errors=[
+                    "moedularizer is not installed. "
+                    "Install it with: pip install moedularizer"
+                ],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
+            )
+
+        import_info = finding.data.get("import_info", {})
+        name = import_info.get("name", finding.import_name or "")
+        module = import_info.get("module", finding.import_module or "")
+
+        bridge = ImodentBridge()
+        project_dir = finding.file.parent
+        project_paths = [project_dir] if project_dir.exists() else [finding.file]
+
+        try:
+            report = bridge.analyze_project(project_paths, check_lint=False)
+        except Exception as e:
+            return FixResult(
+                success=False,
+                content=content,
+                errors=[f"moedularizer analysis failed: {e}"],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
+            )
+
+        # Build wiring guidance from the report
+        lines: list[str] = []
+        lines.append(
+            f"Wire guidance for '{module}.{name}' at {finding.file.name}:{finding.location.line}"
+        )
+
+        if report.cross_file_deps:
+            # Show which modules import this symbol
+            importers = [
+                m for m, deps in report.cross_file_deps.items()
+                if module in deps
+            ]
+            if importers:
+                lines.append(
+                    f"  Cross-file importers ({len(importers)}): "
+                    + ", ".join(sorted(importers)[:5])
+                )
+
+        # Show per-file usage data
+        if report.import_usage:
+            for path, usages in report.import_usage.items():
+                matching = [
+                    u for u in usages
+                    if u.module == module and (u.name == name or name is None)
+                ]
+                if matching and path != finding.file:
+                    for u in matching[:3]:
+                        lines.append(
+                            f"  {path.name}:{u.line} — {u.message}"
+                        )
+
+        if report.warnings:
+            lines.append(f"  Warnings from analysis ({len(report.warnings)}):")
+            for w in report.warnings[:5]:
+                lines.append(f"    {w}")
+
+        # The import is kept in-place; the guidance shows where to wire it
+        return FixResult(
+            success=True,
+            content=content,
+            errors=[],
+            warnings=lines,
             original_valid=True,
             fixed_valid=True,
         )
