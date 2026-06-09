@@ -164,6 +164,7 @@ def __getattr__(name: str):
     }
     if name in _lazy:
         import importlib
+
         module = importlib.import_module(_lazy[name], __package__)
         value = getattr(module, name)
         globals()[name] = value

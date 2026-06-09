@@ -210,9 +210,11 @@ def _scan_cargo_root(
                 Finding.create(
                     type="rust_lint_policy_missing",
                     severity=Severity.INFO,
-                    file=cargo_toml_path
-                    if cargo_toml_path.exists()
-                    else root / "Cargo.toml",
+                    file=(
+                        cargo_toml_path
+                        if cargo_toml_path.exists()
+                        else root / "Cargo.toml"
+                    ),
                     message=(
                         "No [lints] or [workspace.lints] section in Cargo.toml. "
                         "Consider defining an explicit Rust/Clippy lint policy."
