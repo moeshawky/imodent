@@ -4,13 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from imodent.advisors.base import Advisor
 from imodent.analysis.context import AnalysisContext
 from imodent.analysis.findings import Finding, FixOption, Severity
 from imodent.analyzers.base import Analyzer, AnalyzerCapability
-from imodent.advisors.base import Advisor
 from imodent.fixers.base import Fixer
 from imodent.interfaces import FixResult, LanguageStrategy, Processor
-
 
 # ---------------------------------------------------------------------------
 # FixResult tests
@@ -58,6 +57,7 @@ def test_fix_result_failure():
 
 def test_language_strategy_abc_enforces_contract():
     """Subclass without all abstract methods raises TypeError on instantiation."""
+
     class PartialStrategy(LanguageStrategy):
         @property
         def name(self) -> str:
@@ -75,6 +75,7 @@ def test_language_strategy_abc_enforces_contract():
 
 def test_language_strategy_full_implementation():
     """Full LanguageStrategy subclass can be instantiated and used."""
+
     class FullStrategy(LanguageStrategy):
         @property
         def name(self) -> str:
@@ -87,11 +88,16 @@ def test_language_strategy_full_implementation():
         def detect(self, content: str) -> bool:
             return "FULL" in content
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             return FixResult(
-                success=True, content=content,
-                errors=[], warnings=[],
-                original_valid=True, fixed_valid=True,
+                success=True,
+                content=content,
+                errors=[],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
             )
 
         def validate(self, content: str) -> tuple[bool, str | None]:
@@ -114,6 +120,7 @@ def test_language_strategy_full_implementation():
 
 def test_processor_abc_enforces_contract():
     """Subclass without abstract methods raises TypeError on instantiation."""
+
     class PartialProcess(Processor):
         @property
         def name(self) -> str:
@@ -127,6 +134,7 @@ def test_processor_abc_enforces_contract():
 
 def test_processor_full_implementation():
     """Full Processor subclass can be instantiated."""
+
     class FullProcess(Processor):
         @property
         def name(self) -> str:
@@ -134,9 +142,12 @@ def test_processor_full_implementation():
 
         def process(self, content: str, strategy: LanguageStrategy) -> FixResult:
             return FixResult(
-                success=True, content=content,
-                errors=[], warnings=[],
-                original_valid=True, fixed_valid=True,
+                success=True,
+                content=content,
+                errors=[],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
             )
 
     # Need a strategy instance for process()
@@ -152,7 +163,9 @@ def test_processor_full_implementation():
         def detect(self, content: str) -> bool:
             return True
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             return FixResult(True, content, [], [], True, True)
 
         def validate(self, content: str) -> tuple[bool, str | None]:
@@ -171,6 +184,7 @@ def test_processor_full_implementation():
 
 def test_advisor_base_defaults():
     """Advisor ABC has priority default of 5."""
+
     class ConcreteAdvisor(Advisor):
         @property
         def name(self) -> str:
@@ -188,6 +202,7 @@ def test_advisor_base_defaults():
 
 def test_advisor_base_can_handle():
     """Concrete Advisor subclass instantiates and can override priority."""
+
     class HighPrioAdvisor(Advisor):
         @property
         def name(self) -> str:
@@ -202,6 +217,7 @@ def test_advisor_base_can_handle():
 
         def advise(self, findings, context):
             from imodent.analysis.findings import Advice
+
             return [
                 Advice(
                     finding_ids=[],
@@ -235,6 +251,7 @@ def test_analyzer_capability_enum():
 
 def test_analyzer_base_defaults():
     """Analyzer ABC has correct default values for non-abstract properties."""
+
     class ConcreteAnalyzer(Analyzer):
         @property
         def name(self) -> str:
@@ -254,6 +271,7 @@ def test_analyzer_base_defaults():
 
 def test_analyzer_can_analyze_no_languages():
     """Analyzer.can_analyze returns True when languages filter is empty (all languages)."""
+
     class UniversalAnalyzer(Analyzer):
         @property
         def name(self) -> str:
@@ -304,6 +322,7 @@ def test_analyzer_can_analyze_language_filter():
 
 def test_analyzer_abc_enforces_contract():
     """Analyzer subclass without abstract methods raises TypeError."""
+
     class PartialAnalyzer(Analyzer):
         @property
         def name(self) -> str:
@@ -366,9 +385,12 @@ def test_fixer_full_implementation():
 
         def apply_fix(self, finding, option, content: str) -> FixResult:
             return FixResult(
-                success=True, content=content,
-                errors=[], warnings=[],
-                original_valid=True, fixed_valid=True,
+                success=True,
+                content=content,
+                errors=[],
+                warnings=[],
+                original_valid=True,
+                fixed_valid=True,
             )
 
     fixer = ConcreteFixer()
@@ -417,7 +439,9 @@ def test_language_strategy_abc_properties():
         def detect(self, content: str) -> bool:
             return True
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             return FixResult(True, content, [], [], True, True)
 
         def validate(self, content: str) -> tuple[bool, str | None]:
@@ -447,7 +471,9 @@ def test_language_strategy_abc_detect_abstract():
             super().detect(content)  # exercises line 57: pass
             return content == "yes"
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             super().fix(content, indent_size, force)  # exercises line 71: pass
             return FixResult(True, content, [], [], True, True)
 
@@ -490,8 +516,11 @@ def test_fixer_abc_can_handle_abstract():
             super().get_options(finding, context)  # exercises line 55: ...
             return [
                 FixOption(
-                    id="k", label="Keep", description="keep it",
-                    action="keep", is_safe=True,
+                    id="k",
+                    label="Keep",
+                    description="keep it",
+                    action="keep",
+                    is_safe=True,
                 )
             ]
 
@@ -508,8 +537,10 @@ def test_fixer_abc_can_handle_abstract():
 
     # Exercise can_auto_fix (line 37) and get_options (line 55) through Probe
     finding_test = Finding.create(
-        type="test_type", severity=Severity.WARNING,
-        file=Path("/a.py"), message="test",
+        type="test_type",
+        severity=Severity.WARNING,
+        file=Path("/a.py"),
+        message="test",
     )
     assert f.can_auto_fix(finding_test) is True
     opts = f.get_options(finding_test, AnalysisContext())
@@ -518,14 +549,18 @@ def test_fixer_abc_can_handle_abstract():
 
     # Test overridden can_handle
     finding_ok = Finding.create(
-        type="custom_test_type", severity=Severity.WARNING,
-        file=Path("/a.py"), message="test",
+        type="custom_test_type",
+        severity=Severity.WARNING,
+        file=Path("/a.py"),
+        message="test",
     )
     assert f.can_handle(finding_ok) is True
 
     finding_bad = Finding.create(
-        type="other", severity=Severity.WARNING,
-        file=Path("/a.py"), message="test",
+        type="other",
+        severity=Severity.WARNING,
+        file=Path("/a.py"),
+        message="test",
     )
     assert f.can_handle(finding_bad) is False
 
@@ -551,8 +586,11 @@ def test_fixer_abc_apply_fix_returns_fixresult():
         def get_options(self, finding, context) -> list[FixOption]:
             return [
                 FixOption(
-                    id="k", label="Keep", description="keep it",
-                    action="keep", is_safe=True,
+                    id="k",
+                    label="Keep",
+                    description="keep it",
+                    action="keep",
+                    is_safe=True,
                 )
             ]
 
@@ -561,8 +599,10 @@ def test_fixer_abc_apply_fix_returns_fixresult():
             return FixResult(True, content, [], [], True, True)
 
     finding = Finding.create(
-        type="test_type", severity=Severity.WARNING,
-        file=Path("/a.py"), message="test",
+        type="test_type",
+        severity=Severity.WARNING,
+        file=Path("/a.py"),
+        message="test",
     )
     option = FixOption(id="k", label="K", description="d", action="keep", is_safe=True)
 
@@ -700,7 +740,9 @@ def test_processor_abc():
         def detect(self, content: str) -> bool:
             return True
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             return FixResult(True, content, [], [], True, True)
 
         def validate(self, content: str) -> tuple[bool, str | None]:
@@ -757,6 +799,7 @@ def test_interfaces_type_checking_lazy_load():
     sev = ifaces.Severity
     assert sev is not None
     from imodent.analysis.findings import Severity as DirectSeverity
+
     assert sev is DirectSeverity
 
     # Second access hits globals cache (line 173)

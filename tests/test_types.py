@@ -36,7 +36,9 @@ def test_check_mypy_not_installed(monkeypatch):
 
 def test_check_mypy_no_python_files(monkeypatch):
     """check_mypy returns [] when no Python files are in context."""
-    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/mypy" if cmd == "mypy" else None)
+    monkeypatch.setattr(
+        "shutil.which", lambda cmd: "/usr/bin/mypy" if cmd == "mypy" else None
+    )
 
     from imodent.analyzers.types import check_mypy
 
@@ -73,7 +75,9 @@ def test_check_mypy_with_output(tmp_path):
         patch("subprocess.run") as mock_run,
     ):
         mock_run.return_value.returncode = 1
-        mock_run.return_value.stdout = f"{py_file}:1:1: error: Name 'x' is not defined  [name-defined]"
+        mock_run.return_value.stdout = (
+            f"{py_file}:1:1: error: Name 'x' is not defined  [name-defined]"
+        )
         mock_run.return_value.stderr = ""
 
         findings = check_mypy(context)
@@ -145,20 +149,22 @@ def test_check_pyright_with_output(tmp_path):
         patch("subprocess.run") as mock_run,
     ):
         mock_run.return_value.returncode = 1
-        mock_run.return_value.stdout = json.dumps({
-            "generalDiagnostics": [
-                {
-                    "file": str(py_file),
-                    "range": {
-                        "start": {"line": 0, "character": 0},
-                        "end": {"line": 0, "character": 1},
-                    },
-                    "message": "Type 'str' is not assignable to type 'int'",
-                    "severity": "error",
-                    "rule": "reportGeneralTypeIssues",
-                }
-            ]
-        })
+        mock_run.return_value.stdout = json.dumps(
+            {
+                "generalDiagnostics": [
+                    {
+                        "file": str(py_file),
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 1},
+                        },
+                        "message": "Type 'str' is not assignable to type 'int'",
+                        "severity": "error",
+                        "rule": "reportGeneralTypeIssues",
+                    }
+                ]
+            }
+        )
         mock_run.return_value.stderr = ""
 
         findings = check_pyright(context)
@@ -174,6 +180,7 @@ def test_check_pyright_with_output(tmp_path):
 
 
 # --- 9. test_run_type_checker_oserror: OSError → type_check_failure ---
+
 
 def test_run_type_checker_oserror(monkeypatch):
     """subprocess.run raises OSError → single type_check_failure finding."""
@@ -198,6 +205,7 @@ def test_run_type_checker_oserror(monkeypatch):
 
 # --- 10. test_run_type_checker_timeout: TimeoutExpired → type_check_timeout ---
 
+
 def test_run_type_checker_timeout(monkeypatch):
     """subprocess.run raises TimeoutExpired → single type_check_timeout finding."""
     from imodent.analyzers.types import _run_type_checker
@@ -221,6 +229,7 @@ def test_run_type_checker_timeout(monkeypatch):
 
 # --- 11. test_parse_mypy_output_with_stderr: stderr → type_check_failure ---
 
+
 def test_parse_mypy_output_with_stderr():
     """mypy stderr produces additional type_check_failure finding."""
     from imodent.analyzers.types import _parse_mypy_output
@@ -233,12 +242,15 @@ def test_parse_mypy_output_with_stderr():
     type_errors = [f for f in findings if f.type == "type_error"]
     stderr_findings = [f for f in findings if f.type == "type_check_failure"]
     assert len(type_errors) == 1, f"Expected 1 type_error, got {len(type_errors)}"
-    assert len(stderr_findings) == 1, f"Expected 1 type_check_failure from stderr, got {len(stderr_findings)}"
+    assert len(stderr_findings) == 1, (
+        f"Expected 1 type_check_failure from stderr, got {len(stderr_findings)}"
+    )
     assert "stderr" in stderr_findings[0].message
     assert stderr_findings[0].severity == Severity.WARNING
 
 
 # --- 12. test_parse_mypy_output_complex_message: multiple colons in message ---
+
 
 def test_parse_mypy_output_complex_message():
     """mypy line with >3 colons (e.g., file path with colons) → parsed correctly."""
@@ -264,6 +276,7 @@ def test_parse_mypy_output_complex_message():
 
 # --- 13. test_parse_mypy_output_empty_lines: blank lines skipped ---
 
+
 def test_parse_mypy_output_empty_lines():
     """mypy output with blank/whitespace-only lines → those lines ignored."""
     from imodent.analyzers.types import _parse_mypy_output
@@ -281,6 +294,7 @@ def test_parse_mypy_output_empty_lines():
 
 # --- 14. test_parse_pyright_output_invalid_json: non-JSON → [] ---
 
+
 def test_parse_pyright_output_invalid_json():
     """pyright returns invalid JSON → _parse_pyright_output returns []."""
     from imodent.analyzers.types import _parse_pyright_output
@@ -290,6 +304,7 @@ def test_parse_pyright_output_invalid_json():
 
 
 # --- 15. test_parse_pyright_output_no_diagnostics: valid JSON, empty diagnostics → [] ---
+
 
 def test_parse_pyright_output_no_diagnostics():
     """pyright returns valid JSON with empty generalDiagnostics → []."""

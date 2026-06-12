@@ -3,8 +3,6 @@
 import sys
 from pathlib import Path
 
-import pytest
-
 from imodent.analysis.context import AnalysisContext
 from imodent.analysis.findings import Finding, FixOption, Location, Severity
 from imodent.fixers.imports import (
@@ -18,10 +16,10 @@ from imodent.fixers.imports import (
     _reconstruct_import_line,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_import_finding(
     line: int = 1,
@@ -62,6 +60,7 @@ def _make_import_finding(
 # ---------------------------------------------------------------------------
 # get_options tests
 # ---------------------------------------------------------------------------
+
 
 def test_import_fixer_get_options(sample_finding_import):
     """ImportFixer.get_options() returns 3+ options for an unused import."""
@@ -105,14 +104,18 @@ def test_import_fixer_can_handle():
 # apply_fix tests
 # ---------------------------------------------------------------------------
 
+
 def test_import_fixer_apply_delete_valid():
     """ImportFixer.apply_fix('delete') removes the import line."""
     fixer = ImportFixer()
     content = "import os\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -125,9 +128,11 @@ def test_import_fixer_apply_keep(sample_finding_import):
     fixer = ImportFixer()
     content = "import os\nprint(1)\n"
     option = FixOption(
-        id="keep_typing", label="Keep for type hints",
+        id="keep_typing",
+        label="Keep for type hints",
         description="Keep import for type hints",
-        action="keep", is_safe=True,
+        action="keep",
+        is_safe=True,
     )
     result = fixer.apply_fix(sample_finding_import, option, content)
     assert result.success is True
@@ -141,8 +146,11 @@ def test_import_fixer_apply_invalid_line():
     # Finding claims line 99 but content only has 2 lines
     finding = _make_import_finding(line=99, import_name="os")
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -162,8 +170,11 @@ def test_import_fixer_apply_no_location():
         data={"import_info": {"name": "os"}},
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -205,13 +216,7 @@ def test_import_fixer_multiline_import_refused():
     """
     fixer = ImportFixer()
     # Truly multi-line import (spans lines 1-3)
-    content = (
-        "from os import (\n"
-        "    path,\n"
-        "    getcwd,\n"
-        ")\n"
-        "print(1)\n"
-    )
+    content = "from os import (\n    path,\n    getcwd,\n)\nprint(1)\n"
     finding = Finding.create(
         type="unused_import",
         severity=Severity.WARNING,
@@ -229,8 +234,11 @@ def test_import_fixer_multiline_import_refused():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     # Multi-line removal is not yet supported — should fail
@@ -249,8 +257,11 @@ def test_import_fixer_destructive_allowed_respected():
     content = "import json\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="json")
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -278,7 +289,6 @@ def test_import_fixer_can_handle_all_types():
 
 def test_import_fixer_moedularizer_path():
     """_moedularizer_available() returns a bool without raising."""
-    from imodent.fixers.imports import _moedularizer_available
 
     result = _moedularizer_available()
     assert isinstance(result, bool)
@@ -297,14 +307,7 @@ def test_import_fixer_multiline_cannot_partial_remove():
     it cannot safely rewrite multi-line import statements.
     """
     fixer = ImportFixer()
-    content = (
-        "from os import (\n"
-        "    path,\n"
-        "    getcwd,\n"
-        "    chdir,\n"
-        ")\n"
-        "print(1)\n"
-    )
+    content = "from os import (\n    path,\n    getcwd,\n    chdir,\n)\nprint(1)\n"
     finding = Finding.create(
         type="unused_import",
         severity=Severity.WARNING,
@@ -322,8 +325,11 @@ def test_import_fixer_multiline_cannot_partial_remove():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -355,8 +361,11 @@ def test_import_fixer_single_alias_can_remove():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -478,9 +487,11 @@ def test_import_fixer_apply_fix_keep():
     content = "import os\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="keep_typing", label="Keep for type hints",
+        id="keep_typing",
+        label="Keep for type hints",
         description="Keep import for type hints",
-        action="keep", is_safe=True,
+        action="keep",
+        is_safe=True,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -498,9 +509,11 @@ def test_import_fixer_apply_fix_investigate():
     content = "import os\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="investigate", label="Investigate usage",
+        id="investigate",
+        label="Investigate usage",
         description="Search codebase and wire usage",
-        action="investigate", is_safe=True,
+        action="investigate",
+        is_safe=True,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -520,7 +533,6 @@ def test_import_fixer_moedularizer_available():
     When moedularizer is absent, returns False gracefully instead of raising.
     """
     import sys
-    from imodent.fixers.imports import _moedularizer_available
 
     # Always returns a bool, never raises (regardless of installation state)
     result = _moedularizer_available()
@@ -559,19 +571,25 @@ def test_can_auto_fix_all_finding_types():
     fixer = ImportFixer()
 
     # Handled but not auto-fixable
-    assert fixer.can_auto_fix(_make_import_finding(finding_type="unused_import")) is False
-    assert fixer.can_auto_fix(_make_import_finding(finding_type="unused_import_file")) is False
+    assert (
+        fixer.can_auto_fix(_make_import_finding(finding_type="unused_import")) is False
+    )
+    assert (
+        fixer.can_auto_fix(_make_import_finding(finding_type="unused_import_file"))
+        is False
+    )
 
     # Only duplicate_import is auto-fixable
-    assert fixer.can_auto_fix(_make_import_finding(finding_type="duplicate_import")) is True
+    assert (
+        fixer.can_auto_fix(_make_import_finding(finding_type="duplicate_import"))
+        is True
+    )
 
     # Non-handled types always return False
-    assert fixer.can_auto_fix(
-        _make_import_finding(finding_type="syntax_error")
-    ) is False
-    assert fixer.can_auto_fix(
-        _make_import_finding(finding_type="lint")
-    ) is False
+    assert (
+        fixer.can_auto_fix(_make_import_finding(finding_type="syntax_error")) is False
+    )
+    assert fixer.can_auto_fix(_make_import_finding(finding_type="lint")) is False
 
 
 # ---------------------------------------------------------------------------
@@ -726,7 +744,14 @@ def test_get_options_different_finding_types():
         file=Path("/fake/test.py"),
         message="Unused import: unknown",
         location=Location(line=1, column=1),
-        data={"import_info": {"module": "os", "name": "", "alias": None, "intent": "usage"}},
+        data={
+            "import_info": {
+                "module": "os",
+                "name": "",
+                "alias": None,
+                "intent": "usage",
+            }
+        },
     )
     no_name_opts = fixer.get_options(no_name, AnalysisContext())
     # keep_typing is filtered out when name is empty
@@ -767,8 +792,11 @@ def test_apply_fix_multi_alias_removal():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -808,8 +836,11 @@ def test_apply_fix_multi_alias_aliased_removal():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -846,8 +877,11 @@ def test_apply_fix_multi_alias_last_alias_removal():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -880,8 +914,11 @@ def test_apply_fix_multi_alias_not_found():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -905,15 +942,18 @@ def test_apply_fix_multi_alias_empty_import_info():
         data={
             "import_info": {
                 "module": "os",
-                "name": "",        # Empty name
+                "name": "",  # Empty name
                 "alias": None,
                 "intent": "usage",
             }
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -944,8 +984,11 @@ def test_apply_fix_multi_alias_parse_error():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -958,7 +1001,6 @@ def test_apply_fix_multi_alias_syntax_error_after_reconstruction():
     Covers: line 425-435 — SyntaxError guard after AST re-parse in
     _remove_alias_from_multi_import.
     """
-    fixer = ImportFixer()
     # Construct a removal that would break a structural dependency.
     # Removing the only non-aliased name from a from-import that is used
     # syntactically won't cause SyntaxError — but targeting a line where
@@ -985,8 +1027,11 @@ def test_apply_fix_delete_single_import_with_trailing_blank():
     content = "import os\n\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -1002,7 +1047,6 @@ def test_apply_fix_delete_syntax_error_on_removal():
 
     Covers: lines 322-323 — SyntaxError guard after ast.parse in _remove_import.
     """
-    fixer = ImportFixer()
     # A structural import that, when removed, breaks the file.
     # For example: an import that provides a name used in a type comment
     # or something that ast.parse rejects.
@@ -1045,9 +1089,11 @@ def test_apply_fix_investigate_and_keep():
     # keep action
     finding_keep = _make_import_finding(line=1, import_name="json")
     keep_opt = FixOption(
-        id="keep_typing", label="Keep for type hints",
+        id="keep_typing",
+        label="Keep for type hints",
         description="Keep import for type hints",
-        action="keep", is_safe=True,
+        action="keep",
+        is_safe=True,
     )
     result = fixer.apply_fix(finding_keep, keep_opt, content)
     assert result.success is True
@@ -1057,9 +1103,11 @@ def test_apply_fix_investigate_and_keep():
     # investigate action
     finding_inv = _make_import_finding(line=1, import_name="json")
     inv_opt = FixOption(
-        id="investigate", label="Investigate usage",
+        id="investigate",
+        label="Investigate usage",
         description="Search codebase and wire usage",
-        action="investigate", is_safe=True,
+        action="investigate",
+        is_safe=True,
     )
     result2 = fixer.apply_fix(finding_inv, inv_opt, content)
     assert result2.success is False
@@ -1076,9 +1124,12 @@ def test_apply_fix_use_action():
     content = "import os\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="false_positive", label="This is used",
+        id="false_positive",
+        label="This is used",
         description="Mark as false positive - the import IS used",
-        action="use", is_safe=True, requires_input=True,
+        action="use",
+        is_safe=True,
+        requires_input=True,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is True
@@ -1095,6 +1146,7 @@ def test_apply_fix_refactor_action_no_moedularizer(monkeypatch):
     guard at line 467-478.
     """
     import builtins
+
     _orig_import = builtins.__import__
 
     def _block_moedularizer(name, *args, **kwargs):
@@ -1107,9 +1159,11 @@ def test_apply_fix_refactor_action_no_moedularizer(monkeypatch):
     content = "import os\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="refactor", label="Refactor / wire usage",
+        id="refactor",
+        label="Refactor / wire usage",
         description="Use moedularizer to trace dependencies",
-        action="refactor", is_safe=True,
+        action="refactor",
+        is_safe=True,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -1125,8 +1179,11 @@ def test_apply_fix_unknown_action():
     content = "import os\nprint(1)\n"
     finding = _make_import_finding(line=1, import_name="os")
     option = FixOption(
-        id="bogus", label="Bogus", description="Unknown action",
-        action="nonexistent_action", is_safe=True,
+        id="bogus",
+        label="Bogus",
+        description="Unknown action",
+        action="nonexistent_action",
+        is_safe=True,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -1258,7 +1315,9 @@ def test_reconstruct_import_line_from_import_single():
     tree = _parse_content_or_none("from os import path\n")
     node = tree.body[0]
     # Remove no aliases — reconstruct with the same one
-    result = _reconstruct_import_line(node, list(node.names), "from os import path\n", 1)
+    result = _reconstruct_import_line(
+        node, list(node.names), "from os import path\n", 1
+    )
     assert "from os import" in result
 
 
@@ -1269,7 +1328,9 @@ def test_reconstruct_import_line_from_import_multi_no_parens():
     """
     tree = _parse_content_or_none("from os import path, getcwd\n")
     node = tree.body[0]
-    result = _reconstruct_import_line(node, list(node.names), "from os import path, getcwd\n", 1)
+    result = _reconstruct_import_line(
+        node, list(node.names), "from os import path, getcwd\n", 1
+    )
     assert "(" in result
     assert ")" in result
     assert "path" in result
@@ -1347,8 +1408,11 @@ def test_remove_alias_from_multi_import_wrong_line():
     # Line 3 is 'print(1)' — no import node there, but within range
     finding = _make_import_finding(line=3, import_name="os")
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     assert result.success is False
@@ -1383,8 +1447,11 @@ def test_remove_alias_from_multi_import_skips_wrong_import():
         },
     )
     option = FixOption(
-        id="delete", label="Remove", description="Remove import",
-        action="delete", is_safe=False,
+        id="delete",
+        label="Remove",
+        description="Remove import",
+        action="delete",
+        is_safe=False,
     )
     result = fixer.apply_fix(finding, option, content)
     # Should succeed — removes 'path' from line 2's from-import

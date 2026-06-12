@@ -3,8 +3,6 @@ DecisionActions, DecisionConfidence, DecisionSubjects, DecisionPolicy."""
 
 from pathlib import Path
 
-import pytest
-
 from imodent.advisors.architecture import ArchitectureAdvisor
 from imodent.analysis.context import (
     AnalysisConfig,
@@ -40,6 +38,7 @@ from imodent.graph.dependency import build_dependency_graph, trace_symbol_usage
 # ---------------------------------------------------------------------------
 # Finding tests
 # ---------------------------------------------------------------------------
+
 
 def test_finding_create_auto_id():
     """Finding.create() generates unique 8-char hex IDs."""
@@ -81,6 +80,7 @@ def test_finding_create_preserves_fields():
 # ---------------------------------------------------------------------------
 # Evidence tests
 # ---------------------------------------------------------------------------
+
 
 def test_evidence_auto_id():
     """Evidence instances get unique incrementing IDs."""
@@ -130,6 +130,7 @@ def test_evidence_default_values():
 # DecisionEngine tests
 # ---------------------------------------------------------------------------
 
+
 def test_decision_engine_groups_by_binding_key():
     """Two findings with the same binding_key fuse into one DecisionCandidate."""
     file = Path("/fake/mod.py")
@@ -172,9 +173,7 @@ def test_decision_engine_groups_by_binding_key():
 
     engine = DecisionEngine()
     candidates = engine.build_candidates([f1, f2])
-    assert len(candidates) == 1, (
-        f"Expected 1 fused candidate, got {len(candidates)}"
-    )
+    assert len(candidates) == 1, f"Expected 1 fused candidate, got {len(candidates)}"
     assert len(candidates[0].finding_ids) == 2
 
 
@@ -219,6 +218,7 @@ def test_decision_engine_assigns_confidence():
 # ---------------------------------------------------------------------------
 # AnalysisCoordinator tests
 # ---------------------------------------------------------------------------
+
 
 def test_coordinator_analyze(tmp_path):
     """AnalysisCoordinator.analyze() on a valid Python file returns findings list."""
@@ -273,9 +273,7 @@ def test_coordinator_syntax_error_detected(tmp_path):
     coordinator = AnalysisCoordinator(config=config)
     result = coordinator.analyze([py_file])
 
-    syntax_errors = [
-        f for f in result.findings if f.type == "syntax_error"
-    ]
+    syntax_errors = [f for f in result.findings if f.type == "syntax_error"]
     assert len(syntax_errors) >= 1, "Syntax error should be detected"
 
 
@@ -349,7 +347,7 @@ def test_coordinator_discover_files():
         src.mkdir()
         (src / "a.py").write_text("x = 1\n")
         (src / "b.py").write_text("y = 2\n")
-        (src / "data.json").write_text('{}')
+        (src / "data.json").write_text("{}")
         (src / "readme.md").write_text("# docs")
 
         coordinator = AnalysisCoordinator()
@@ -378,7 +376,9 @@ def test_coordinator_analyze_with_findings(tmp_path):
     assert isinstance(result.findings, list)
     # Should have some unused import findings
     unused = [f for f in result.findings if "unused" in f.type]
-    assert len(unused) >= 1, f"Expected at least 1 unused import finding, got {[f.type for f in result.findings]}"
+    assert len(unused) >= 1, (
+        f"Expected at least 1 unused import finding, got {[f.type for f in result.findings]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -573,9 +573,7 @@ def test_decision_confidence_all_levels():
     assert len(candidates) == 3
     assert "high" in labels or "medium" in labels or "low" in labels
     # F401 should be high
-    f401_candidate = [
-        c for c in candidates if "F401" in " ".join(c.finding_ids)
-    ]
+    f401_candidate = [c for c in candidates if "F401" in " ".join(c.finding_ids)]
     if f401_candidate:
         assert f401_candidate[0].confidence > 0.80
 
@@ -591,10 +589,7 @@ def test_import_analyzer_behavior_intent(tmp_path):
     Covers: _detect_import_intent lines 331-336 (_REGISTRATION_PATTERN check).
     """
     py_file = tmp_path / "mod.py"
-    py_file.write_text(
-        "import unused_lib\n\n"
-        "@register\ndef handler():\n    pass\n"
-    )
+    py_file.write_text("import unused_lib\n\n@register\ndef handler():\n    pass\n")
 
     file_info = FileInfo.from_path(py_file)
     context = AnalysisContext(
@@ -628,9 +623,7 @@ def test_import_analyzer_shell_imports(tmp_path):
     pkg_dir.mkdir()
     init_file = pkg_dir / "__init__.py"
     init_file.write_text(
-        "from .core import run\n"
-        "from .core import hidden\n"
-        "__all__ = ['run']\n"
+        "from .core import run\nfrom .core import hidden\n__all__ = ['run']\n"
     )
 
     # A consumer module that imports from pkg → gives pkg graph importers
@@ -656,7 +649,9 @@ def test_import_analyzer_shell_imports(tmp_path):
     # 'run' is in __all__ → treated as used → no finding in __init__.py
     # (consumer.py also imports run but doesn't use it — that's a separate finding)
     unused = [f for f in findings if f.type == "unused_import_file"]
-    run_unused_init = [f for f in unused if f.import_name == "run" and f.file == init_file]
+    run_unused_init = [
+        f for f in unused if f.import_name == "run" and f.file == init_file
+    ]
     assert len(run_unused_init) == 0, (
         f"'run' in __all__ should be treated as used in __init__.py, "
         f"got: {[f.message for f in run_unused_init]}"
@@ -664,10 +659,7 @@ def test_import_analyzer_shell_imports(tmp_path):
 
     # 'hidden' NOT in __all__ → enters intent detection → re_export (__init__.py + graph)
     intent = [f for f in findings if f.type == "import_intent"]
-    hidden_intent = [
-        f for f in intent
-        if "hidden" in f.message
-    ]
+    hidden_intent = [f for f in intent if "hidden" in f.message]
     assert len(hidden_intent) >= 1, (
         f"'hidden' NOT in __all__ should get re_export intent from __init__.py, "
         f"got findings: {[(f.type, f.message[:80]) for f in findings]} "
@@ -687,10 +679,7 @@ def test_import_analyzer_init_py_unused_not_in_all(tmp_path):
     pkg_dir = tmp_path / "pkg"
     pkg_dir.mkdir()
     init_file = pkg_dir / "__init__.py"
-    init_file.write_text(
-        "from .core import hidden\n\n"
-        "__all__ = ['visible']\n"
-    )
+    init_file.write_text("from .core import hidden\n\n__all__ = ['visible']\n")
 
     file_info = FileInfo.from_path(init_file)
     context = AnalysisContext(
@@ -732,7 +721,8 @@ def test_import_analyzer_lazy_import(tmp_path):
 
     # __future__ imports are compiler directives — should produce no findings
     future_related = [
-        f for f in findings
+        f
+        for f in findings
         if "__future__" in f.message or "annotations" in f.message.lower()
     ]
     assert len(future_related) == 0, (
@@ -789,8 +779,7 @@ def test_import_analyzer_typing_import(tmp_path):
     findings2 = analyzer.analyze(context2)
     unused2 = [f for f in findings2 if f.type == "unused_import_file"]
     assert len(unused2) >= 1, (
-        f"Dict imported but unused should be flagged, "
-        f"got {len(unused2)} findings"
+        f"Dict imported but unused should be flagged, got {len(unused2)} findings"
     )
     assert any(f.import_name == "Dict" for f in unused2)
 
@@ -832,10 +821,7 @@ def test_import_analyzer_redundant_alias(tmp_path):
     Covers: _find_redundant_aliases alias == bound_name line 554.
     """
     py_file = tmp_path / "mod.py"
-    py_file.write_text(
-        "from os import path as path\n\n"
-        "print(path.join('a', 'b'))\n"
-    )
+    py_file.write_text("from os import path as path\n\nprint(path.join('a', 'b'))\n")
 
     file_info = FileInfo.from_path(py_file)
     context = AnalysisContext(
@@ -862,8 +848,7 @@ def test_import_analyzer_multiple_imports(tmp_path):
     """
     py_file = tmp_path / "mod.py"
     py_file.write_text(
-        "from os import path, environ, getcwd\n\n"
-        "print(path.join('a', 'b'))\n"
+        "from os import path, environ, getcwd\n\nprint(path.join('a', 'b'))\n"
     )
 
     file_info = FileInfo.from_path(py_file)
@@ -915,9 +900,12 @@ def test_import_analyzer_import_star(tmp_path):
     assert isinstance(findings, list), "analyzer should return a list"
     # Wildcard import should produce at least one finding (it's generally discouraged)
     star_findings = [
-        f for f in findings
-        if f.type == "unused_import_file" and (
-            f.import_name == "*" or "*" in str(f.data.get("import_info", {}).get("name", ""))
+        f
+        for f in findings
+        if f.type == "unused_import_file"
+        and (
+            f.import_name == "*"
+            or "*" in str(f.data.get("import_info", {}).get("name", ""))
         )
     ]
     assert len(star_findings) >= 1, (
@@ -946,10 +934,7 @@ def test_import_analyzer_empty_file(tmp_path):
     findings = analyzer.analyze(context)
 
     # Should find no import-related issues
-    import_findings = [
-        f for f in findings
-        if "import" in f.type or "unused" in f.type
-    ]
+    import_findings = [f for f in findings if "import" in f.type or "unused" in f.type]
     assert len(import_findings) == 0, (
         f"Empty file should produce zero import findings, "
         f"got: {[f.type for f in import_findings]}"
@@ -1019,9 +1004,7 @@ def test_import_analyzer_circular_detection(tmp_path):
 
     mod_b = pkg_dir / "mod_b.py"
     mod_b.write_text(
-        "from .mod_a import func_a\n\n"
-        "def func_b():\n"
-        "    return func_a()\n"
+        "from .mod_a import func_a\n\ndef func_b():\n    return func_a()\n"
     )
 
     # External consumer imports from pkg — makes pkg imported_by main
@@ -1050,8 +1033,7 @@ def test_import_analyzer_circular_detection(tmp_path):
     # __init__.py re-exports in __all__: treated as used → no finding
     # __init__.py 'helper' NOT in __all__: enters intent → re_export + evidence
     unused_init = [
-        f for f in findings
-        if f.file == init_file and f.type == "unused_import_file"
+        f for f in findings if f.file == init_file and f.type == "unused_import_file"
     ]
     assert len(unused_init) == 0, (
         f"__init__.py re-exports should not be flagged unused, "
@@ -1064,8 +1046,7 @@ def test_import_analyzer_circular_detection(tmp_path):
     # Evidence is stored in finding.data["evidence"], not context.evidence.
     # Find the import_intent finding for 'helper' and check its evidence.
     helper_findings = [
-        f for f in findings
-        if f.type == "import_intent" and "helper" in f.message
+        f for f in findings if f.type == "import_intent" and "helper" in f.message
     ]
     assert len(helper_findings) >= 1, (
         f"Expected import_intent finding for 'helper' re-export, "
@@ -1082,19 +1063,20 @@ def test_import_analyzer_circular_detection(tmp_path):
 
     # ProjectGraphImporters should appear since consumer imports from pkg
     if "ProjectGraphImporters" in evidence_kinds:
-        pg_entries = [e for e in evidence_entries
-                      if isinstance(e, dict) and e.get("kind") == "ProjectGraphImporters"]
+        pg_entries = [
+            e
+            for e in evidence_entries
+            if isinstance(e, dict) and e.get("kind") == "ProjectGraphImporters"
+        ]
         assert len(pg_entries) >= 1, "ProjectGraphImporters evidence should exist"
 
     # Cross-file usage: func_b used in mod_a, func_a used in mod_b →
     # both should NOT be flagged as unused within their files
     mod_a_unused = [
-        f for f in findings
-        if f.file == mod_a and f.type == "unused_import_file"
+        f for f in findings if f.file == mod_a and f.type == "unused_import_file"
     ]
     mod_b_unused = [
-        f for f in findings
-        if f.file == mod_b and f.type == "unused_import_file"
+        f for f in findings if f.file == mod_b and f.type == "unused_import_file"
     ]
     assert len(mod_a_unused) == 0, (
         f"func_b called in mod_a → should not be unused in mod_a, "
@@ -1134,7 +1116,8 @@ def test_import_analyzer_re_export_intent(tmp_path):
     )
 
     re_export = [
-        f for f in intent_findings
+        f
+        for f in intent_findings
         if f.data.get("import_info", {}).get("intent") == "re_export"
     ]
     assert len(re_export) >= 1, (
@@ -1171,7 +1154,8 @@ def test_import_analyzer_re_export_interfaces(tmp_path):
     )
 
     re_export = [
-        f for f in intent_findings
+        f
+        for f in intent_findings
         if f.data.get("import_info", {}).get("intent") == "re_export"
     ]
     assert len(re_export) >= 1, (
@@ -1195,9 +1179,7 @@ def test_import_analyzer_typing_intent(tmp_path):
     """
     py_file = tmp_path / "mod.py"
     py_file.write_text(
-        "from typing import Dict\n\n"
-        "x = {}  # type: Dict[str, int]\n"
-        "y: int = 0\n"
+        "from typing import Dict\n\nx = {}  # type: Dict[str, int]\ny: int = 0\n"
     )
 
     file_info = FileInfo.from_path(py_file)
@@ -1213,7 +1195,8 @@ def test_import_analyzer_typing_intent(tmp_path):
     )
 
     typing_intents = [
-        f for f in intent_findings
+        f
+        for f in intent_findings
         if f.data.get("import_info", {}).get("intent") == "typing"
     ]
     assert len(typing_intents) >= 1, (
@@ -1245,7 +1228,8 @@ def test_import_analyzer_registration_intent(tmp_path):
     )
 
     side_effect = [
-        f for f in intent_findings
+        f
+        for f in intent_findings
         if f.data.get("import_info", {}).get("intent") == "side_effect"
     ]
     assert len(side_effect) >= 1, (
@@ -1278,7 +1262,8 @@ def test_import_analyzer_side_effect_comment(tmp_path):
     )
 
     side_effect = [
-        f for f in intent_findings
+        f
+        for f in intent_findings
         if f.data.get("import_info", {}).get("intent") == "side_effect"
     ]
     assert len(side_effect) >= 1, (
@@ -1296,12 +1281,7 @@ def test_import_analyzer_try_block_intent(tmp_path):
             _classify_try_context lines 67-95.
     """
     py_file = tmp_path / "mod.py"
-    py_file.write_text(
-        "try:\n"
-        "    import optional_lib\n"
-        "except ImportError:\n"
-        "    pass\n"
-    )
+    py_file.write_text("try:\n    import optional_lib\nexcept ImportError:\n    pass\n")
 
     file_info = FileInfo.from_path(py_file)
     assert file_info.ast_tree is not None
@@ -1316,7 +1296,8 @@ def test_import_analyzer_try_block_intent(tmp_path):
     )
 
     try_block = [
-        f for f in intent_findings
+        f
+        for f in intent_findings
         if f.data.get("import_info", {}).get("intent") == "try_block"
     ]
     assert len(try_block) >= 1, (
@@ -1360,10 +1341,7 @@ def test_import_analyzer_usage_intent_multiple(tmp_path):
     """
     py_file = tmp_path / "mod.py"
     py_file.write_text(
-        "import os\n\n"
-        "print(os.getcwd())\n"
-        "print(os.listdir())\n"
-        "print(os.sep)\n"
+        "import os\n\nprint(os.getcwd())\nprint(os.listdir())\nprint(os.sep)\n"
     )
 
     file_info = FileInfo.from_path(py_file)
@@ -1408,7 +1386,11 @@ def test_import_analyzer_no_intent_unused(tmp_path):
     assert len(unused_file) >= 1, (
         f"Expected >=1 unused_import_file, got types: {[f.type for f in findings]}"
     )
-    json_finding = [f for f in unused_file if "json" in (f.import_name or "") or "json" in f.message.lower()]
+    json_finding = [
+        f
+        for f in unused_file
+        if "json" in (f.import_name or "") or "json" in f.message.lower()
+    ]
     assert len(json_finding) >= 1, (
         f"Expected finding about json, got: {[f.message for f in unused_file]}"
     )
@@ -1885,7 +1867,7 @@ def test_apply_fixes_destructive_not_allowed_skips(tmp_path):
         subject_key=subject_key,
         finding_ids=[finding.id],
         confidence=0.85,
-        destructive_allowed=False,       # gate closed
+        destructive_allowed=False,  # gate closed
         requires_user_decision=False,
     )
 
@@ -1927,8 +1909,11 @@ def test_coordinator_fix_returns_dict_of_fixresult(tmp_path):
     )
 
     subject_key = SubjectKey(
-        kind="import", file=py_file, scope="module",
-        module=None, name="os",
+        kind="import",
+        file=py_file,
+        scope="module",
+        module=None,
+        name="os",
     )
 
     candidate = DecisionCandidate(
@@ -2016,8 +2001,11 @@ def test_apply_fixes_requires_user_decision_skips(tmp_path):
     )
 
     subject_key = SubjectKey(
-        kind="import", file=py_file, scope="module",
-        module=None, name="os",
+        kind="import",
+        file=py_file,
+        scope="module",
+        module=None,
+        name="os",
     )
 
     candidate = DecisionCandidate(
@@ -2026,7 +2014,7 @@ def test_apply_fixes_requires_user_decision_skips(tmp_path):
         finding_ids=[finding.id],
         confidence=0.75,
         destructive_allowed=True,
-        requires_user_decision=True,      # needs human
+        requires_user_decision=True,  # needs human
     )
 
     coordinator = AnalysisCoordinator()
@@ -2066,7 +2054,7 @@ def test_coordinator_project_root_detection_with_setup(tmp_path):
 
     src = tmp_path / "src"
     src.mkdir()
-    (tmp_path / "setup.py").write_text('# setup\n')
+    (tmp_path / "setup.py").write_text("# setup\n")
 
     coordinator = AnalysisCoordinator()
     root = coordinator._find_project_root([src])
@@ -2105,7 +2093,6 @@ def test_coordinator_project_root_empty_paths():
     coordinator = AnalysisCoordinator()
     root = coordinator._find_project_root([])
     assert root == Path.cwd()
-
 
 
 # ============================================================================
@@ -2298,7 +2285,9 @@ def test_build_dependency_graph_basic(tmp_path):
     graph = build_dependency_graph(file_infos, tmp_path)
 
     # mod_a should import mod_b
-    assert "mod_a" in graph.imports, f"mod_a not in imports: {list(graph.imports.keys())}"
+    assert "mod_a" in graph.imports, (
+        f"mod_a not in imports: {list(graph.imports.keys())}"
+    )
     assert "mod_b" in graph.imports["mod_a"], (
         f"mod_a should import mod_b, got {graph.imports.get('mod_a')}"
     )
@@ -2359,7 +2348,9 @@ def test_trace_symbol_usage_finds_usage(tmp_path):
         f"Expected at least 2 usages of 'os', got {len(usages)}: {usages}"
     )
     files_with_usage = {u.file for u in usages}
-    assert py_a in files_with_usage, f"a.py should have 'os' usages, files: {files_with_usage}"
+    assert py_a in files_with_usage, (
+        f"a.py should have 'os' usages, files: {files_with_usage}"
+    )
 
     # Check SymbolUsage fields
     for usage in usages:
@@ -2664,7 +2655,13 @@ def test_decision_confidence_import_intent():
         file=file,
         message="Import intent: registration",
         location=Location(line=1),
-        data={"import_info": {"module": None, "name": "registry_lib", "intent": "registration"}},
+        data={
+            "import_info": {
+                "module": None,
+                "name": "registry_lib",
+                "intent": "registration",
+            }
+        },
     )
     confidence = _score_confidence(f, [f], [])
     assert confidence == 0.30
@@ -2749,9 +2746,13 @@ def test_decision_confidence_rust_broad_allow():
 def test_decision_confidence_rust_advisory():
     """_score_confidence returns 0.50 for RUST_ADVISORY_FINDING_TYPES."""
     file = Path("/fake/lib.rs")
-    for ftype in ["rust_lint_policy_missing", "rust_clippy_config_missing",
-                  "rust_rustfmt_config_missing", "rust_residue_marker",
-                  "rust_project_unmanaged"]:
+    for ftype in [
+        "rust_lint_policy_missing",
+        "rust_clippy_config_missing",
+        "rust_rustfmt_config_missing",
+        "rust_residue_marker",
+        "rust_project_unmanaged",
+    ]:
         f = Finding.create(
             type=ftype,
             severity=Severity.INFO,
@@ -3277,13 +3278,20 @@ def test_coordinator_fix_interactive_non_tty_fallback(tmp_path, monkeypatch):
         import_name="os",
         data={
             "import_info": {
-                "module": None, "name": "os", "alias": None, "intent": "usage",
+                "module": None,
+                "name": "os",
+                "alias": None,
+                "intent": "usage",
             }
         },
     )
 
     subject_key = SubjectKey(
-        kind="import", file=py_file, scope="module", module=None, name="os",
+        kind="import",
+        file=py_file,
+        scope="module",
+        module=None,
+        name="os",
     )
 
     candidate = DecisionCandidate(
@@ -3333,13 +3341,20 @@ def test_coordinator_fix_report_mode(tmp_path):
         import_name="os",
         data={
             "import_info": {
-                "module": None, "name": "os", "alias": None, "intent": "usage",
+                "module": None,
+                "name": "os",
+                "alias": None,
+                "intent": "usage",
             }
         },
     )
 
     subject_key = SubjectKey(
-        kind="import", file=py_file, scope="module", module=None, name="os",
+        kind="import",
+        file=py_file,
+        scope="module",
+        module=None,
+        name="os",
     )
 
     candidate = DecisionCandidate(
@@ -3389,13 +3404,20 @@ def test_coordinator_fix_interactive_user_skip(monkeypatch, tmp_path):
         import_name="os",
         data={
             "import_info": {
-                "module": None, "name": "os", "alias": None, "intent": "usage",
+                "module": None,
+                "name": "os",
+                "alias": None,
+                "intent": "usage",
             }
         },
     )
 
     subject_key = SubjectKey(
-        kind="import", file=py_file, scope="module", module=None, name="os",
+        kind="import",
+        file=py_file,
+        scope="module",
+        module=None,
+        name="os",
     )
 
     candidate = DecisionCandidate(
@@ -3518,6 +3540,7 @@ def test_discover_files_explicit_file_excluded():
     Covers: _discover_files explicit_excluded path lines 353-355.
     """
     import tempfile
+
     from imodent.analysis.coordinator import AnalysisCoordinator
 
     with tempfile.TemporaryDirectory(prefix="imodent_excl_") as tmp:
@@ -3774,6 +3797,7 @@ def test_discover_files_multiple_directories():
     would collide with the default ``test_*.py`` exclude pattern.
     """
     import tempfile
+
     from imodent.analysis.coordinator import AnalysisCoordinator
 
     with tempfile.TemporaryDirectory(prefix="imodent_multi_") as tmp:
@@ -3800,6 +3824,7 @@ def test_discover_files_explicit_file_path():
     Covers: _discover_files path.is_file() branch lines 352-358.
     """
     import tempfile
+
     from imodent.analysis.coordinator import AnalysisCoordinator
 
     with tempfile.TemporaryDirectory(prefix="imodent_file_") as tmp:
@@ -3989,6 +4014,7 @@ def test_coordinator_analyze_skips_generated_artifacts():
     would collide with the default ``test_*.py`` exclude pattern.
     """
     import tempfile
+
     from imodent.analysis.coordinator import AnalysisCoordinator
 
     with tempfile.TemporaryDirectory(prefix="imodent_artifact_") as tmp:

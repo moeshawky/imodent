@@ -18,6 +18,7 @@ def _moedularizer_available() -> bool:
     """Check whether moedularizer is installed and importable."""
     try:
         import moedularizer  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -505,8 +506,7 @@ class ImportFixer(Fixer):
         if report.cross_file_deps:
             # Show which modules import this symbol
             importers = [
-                m for m, deps in report.cross_file_deps.items()
-                if module in deps
+                m for m, deps in report.cross_file_deps.items() if module in deps
             ]
             if importers:
                 lines.append(
@@ -518,14 +518,13 @@ class ImportFixer(Fixer):
         if report.import_usage:
             for path, usages in report.import_usage.items():
                 matching = [
-                    u for u in usages
+                    u
+                    for u in usages
                     if u.module == module and (u.name == name or name is None)
                 ]
                 if matching and path != finding.file:
                     for u in matching[:3]:
-                        lines.append(
-                            f"  {path.name}:{u.line} — {u.message}"
-                        )
+                        lines.append(f"  {path.name}:{u.line} — {u.message}")
 
         if report.warnings:
             lines.append(f"  Warnings from analysis ({len(report.warnings)}):")

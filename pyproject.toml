@@ -98,7 +98,7 @@ select = [
 ignore = ["E501"]  # line length handled by formatter
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "ERA001"]       # allow assert in tests, allow commented code
+"tests/**/*.py" = ["S101", "ERA001", "S607", "S603", "B018"]       # allow assert, commented code, subprocess paths, super() exercise
 "__init__.py" = ["F401"]                    # allow unused imports in __init__ (re-exports)
 "imodent/cli.py" = ["S101"]                 # CLI may use assert
 "imodent/analysis/context.py" = ["TC001", "TC003"] # runtime imports for type tests

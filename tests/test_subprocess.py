@@ -43,6 +43,7 @@ from imodent.analyzers.rust import (
 # LintAnalyzer tests
 # ---------------------------------------------------------------------------
 
+
 def test_lint_analyzer_no_ruff(monkeypatch):
     """LintAnalyzer returns [] when ruff is not available on PATH."""
     monkeypatch.setattr("shutil.which", lambda _cmd: None)
@@ -53,9 +54,8 @@ def test_lint_analyzer_no_ruff(monkeypatch):
     # (both binary and module import fail)
     def _no_ruff():
         return None
-    monkeypatch.setattr(
-        "imodent.analyzers.lint._ruff_command_prefix", _no_ruff
-    )
+
+    monkeypatch.setattr("imodent.analyzers.lint._ruff_command_prefix", _no_ruff)
 
     analyzer = LintAnalyzer()
     py_file = Path("/fake/test.py")
@@ -76,9 +76,7 @@ def test_lint_analyzer_no_ruff(monkeypatch):
 
 def test_lint_analyzer_ruff_unavailable_warning(monkeypatch):
     """LintAnalyzer returns lint_oracle_unavailable when use_ruff=True but ruff missing."""
-    monkeypatch.setattr(
-        "imodent.analyzers.lint._ruff_command_prefix", lambda: None
-    )
+    monkeypatch.setattr("imodent.analyzers.lint._ruff_command_prefix", lambda: None)
 
     analyzer = LintAnalyzer()
     py_file = Path("/fake/test.py")
@@ -174,11 +172,12 @@ def test_lint_analyzer_no_python_files(monkeypatch):
 # RustAnalyzer tests
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_no_cargo(tmp_path):
     """RustAnalyzer with no Cargo.toml returns empty (graceful degradation)."""
     analyzer = RustAnalyzer()
     rs_file = tmp_path / "main.rs"
-    rs_file.write_text("fn main() {\n    println!(\"hello\");\n}\n")
+    rs_file.write_text('fn main() {\n    println!("hello");\n}\n')
     file_info = FileInfo(
         path=rs_file,
         content=rs_file.read_text(),
@@ -237,8 +236,14 @@ def _make_cargo_project(tmp_path, cargo_content, rs_content=None, rs_name="main.
     return cargo_path, rs_path
 
 
-def _build_context(tmp_path, cargo_content, rs_content=None, rs_name="main.rs",
-                   project_root=None, extra_files=None):
+def _build_context(
+    tmp_path,
+    cargo_content,
+    rs_content=None,
+    rs_name="main.rs",
+    project_root=None,
+    extra_files=None,
+):
     """Helper: build AnalysisContext for a Cargo project.
 
     Creates Cargo.toml + optional .rs file on disk, builds FileInfo objects,
@@ -292,6 +297,7 @@ def _findings_by_type(findings, type_name):
 # Test 1: Cargo.toml without [lints] section
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_with_cargo_toml_no_lints(tmp_path):
     """Cargo.toml missing [lints] → rust_lint_policy_missing finding generated."""
     cargo_content = '[package]\nname = "test"\nversion = "0.1.0"\n'
@@ -313,6 +319,7 @@ def test_rust_analyzer_with_cargo_toml_no_lints(tmp_path):
 # ---------------------------------------------------------------------------
 # Test 2: clippy.toml present suppresses clippy config missing
 # ---------------------------------------------------------------------------
+
 
 def test_rust_analyzer_with_clippy_toml(tmp_path):
     """With clippy.toml present, no rust_clippy_config_missing finding."""
@@ -341,6 +348,7 @@ def test_rust_analyzer_with_clippy_toml(tmp_path):
 # Test 3: #![allow(warnings)] in .rs file
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_broad_allow_warnings(tmp_path):
     """#![allow(warnings)] in .rs file → rust_broad_allow finding."""
     cargo_content = '[package]\nname = "test"\nversion = "0.1.0"\n\n[lints]\nrust.missing_docs = "allow"\n'
@@ -352,8 +360,7 @@ def test_rust_analyzer_broad_allow_warnings(tmp_path):
 
     broad = _findings_by_type(findings, "rust_broad_allow")
     assert len(broad) == 1, (
-        f"Expected 1 rust_broad_allow, got {len(broad)}: "
-        f"{[f.type for f in findings]}"
+        f"Expected 1 rust_broad_allow, got {len(broad)}: {[f.type for f in findings]}"
     )
     assert broad[0].severity == Severity.WARNING
     assert broad[0].location is not None
@@ -367,6 +374,7 @@ def test_rust_analyzer_broad_allow_warnings(tmp_path):
 # ---------------------------------------------------------------------------
 # Test 4: #![allow(clippy::all)] in .rs file
 # ---------------------------------------------------------------------------
+
 
 def test_rust_analyzer_broad_allow_clippy_all(tmp_path):
     """#![allow(clippy::all)] in .rs file → rust_broad_allow finding."""
@@ -387,6 +395,7 @@ def test_rust_analyzer_broad_allow_clippy_all(tmp_path):
 # ---------------------------------------------------------------------------
 # Test 5: todo!() marker
 # ---------------------------------------------------------------------------
+
 
 def test_rust_analyzer_todo_marker(tmp_path):
     """todo!() in non-test .rs file → rust_residue_marker (INFO)."""
@@ -411,6 +420,7 @@ def test_rust_analyzer_todo_marker(tmp_path):
 # Test 6: unimplemented!() marker
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_unimplemented_marker(tmp_path):
     """unimplemented!() in non-test .rs file → rust_residue_marker."""
     cargo_content = '[package]\nname = "test"\nversion = "0.1.0"\n\n[lints]\nrust.missing_docs = "allow"\n'
@@ -422,9 +432,7 @@ def test_rust_analyzer_unimplemented_marker(tmp_path):
 
     residue = _findings_by_type(findings, "rust_residue_marker")
     um = [r for r in residue if "unimplemented!" in r.message]
-    assert len(um) == 1, (
-        f"Expected 1 unimplemented marker finding, got {len(um)}"
-    )
+    assert len(um) == 1, f"Expected 1 unimplemented marker finding, got {len(um)}"
     assert um[0].severity == Severity.INFO
 
 
@@ -432,10 +440,11 @@ def test_rust_analyzer_unimplemented_marker(tmp_path):
 # Test 7: dbg!() marker (WARNING severity)
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_dbg_marker(tmp_path):
     """dbg!() in non-test .rs file → rust_residue_marker with WARNING severity."""
     cargo_content = '[package]\nname = "test"\nversion = "0.1.0"\n\n[lints]\nrust.missing_docs = "allow"\n'
-    rs_content = "fn main() {\n    dbg!(\"hello\");\n}\n"
+    rs_content = 'fn main() {\n    dbg!("hello");\n}\n'
     context = _build_context(tmp_path, cargo_content, rs_content)
 
     analyzer = RustAnalyzer()
@@ -443,9 +452,7 @@ def test_rust_analyzer_dbg_marker(tmp_path):
 
     residue = _findings_by_type(findings, "rust_residue_marker")
     dbgs = [r for r in residue if "dbg!" in r.message]
-    assert len(dbgs) == 1, (
-        f"Expected 1 dbg! marker finding, got {len(dbgs)}"
-    )
+    assert len(dbgs) == 1, f"Expected 1 dbg! marker finding, got {len(dbgs)}"
     assert dbgs[0].severity == Severity.WARNING, (
         f"dbg!() marker should be WARNING, got {dbgs[0].severity}"
     )
@@ -454,6 +461,7 @@ def test_rust_analyzer_dbg_marker(tmp_path):
 # ---------------------------------------------------------------------------
 # Test 8: orphan .rs file (no Cargo.toml nearby)
 # ---------------------------------------------------------------------------
+
 
 def test_rust_analyzer_orphan_rs_no_cargo(tmp_path):
     """.rs file without Cargo.toml → rust_project_unmanaged finding."""
@@ -487,6 +495,7 @@ def test_rust_analyzer_orphan_rs_no_cargo(tmp_path):
 # Test 9: missing rustfmt.toml
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_missing_rustfmt_toml(tmp_path):
     """Cargo project without rustfmt.toml → rust_rustfmt_config_missing."""
     cargo_content = '[package]\nname = "test"\nversion = "0.1.0"\n\n[lints]\nrust.missing_docs = "allow"\n'
@@ -507,11 +516,11 @@ def test_rust_analyzer_missing_rustfmt_toml(tmp_path):
 # Test 10: Cargo.toml with [features] but no [lints]
 # ---------------------------------------------------------------------------
 
+
 def test_rust_analyzer_missing_config_with_features(tmp_path):
     """Cargo.toml has [features] but no [lints] → still rust_lint_policy_missing."""
     cargo_content = (
-        '[package]\nname = "test"\nversion = "0.1.0"\n\n'
-        "[features]\ndefault = []\n"
+        '[package]\nname = "test"\nversion = "0.1.0"\n\n[features]\ndefault = []\n'
     )
     rs_content = "fn main() {}\n"
     context = _build_context(tmp_path, cargo_content, rs_content)
@@ -561,7 +570,9 @@ def test_lint_analyzer_ruff_invalid_json(monkeypatch):
     findings = analyzer.analyze(context)
 
     failed = [f for f in findings if f.type == "lint_oracle_failed"]
-    assert len(failed) == 1, f"Expected 1 lint_oracle_failed, got {[f.type for f in findings]}"
+    assert len(failed) == 1, (
+        f"Expected 1 lint_oracle_failed, got {[f.type for f in findings]}"
+    )
     assert "invalid json" in failed[0].message.lower()
 
 
@@ -594,7 +605,9 @@ def test_lint_analyzer_ruff_non_list_output(monkeypatch):
     findings = analyzer.analyze(context)
 
     failed = [f for f in findings if f.type == "lint_oracle_failed"]
-    assert len(failed) == 1, f"Expected 1 lint_oracle_failed, got {[f.type for f in findings]}"
+    assert len(failed) == 1, (
+        f"Expected 1 lint_oracle_failed, got {[f.type for f in findings]}"
+    )
     assert "unexpected shape" in failed[0].message.lower()
 
 
@@ -627,7 +640,9 @@ def test_lint_analyzer_ruff_error_exit(monkeypatch):
     findings = analyzer.analyze(context)
 
     failed = [f for f in findings if f.type == "lint_oracle_failed"]
-    assert len(failed) == 1, f"Expected 1 lint_oracle_failed, got {[f.type for f in findings]}"
+    assert len(failed) == 1, (
+        f"Expected 1 lint_oracle_failed, got {[f.type for f in findings]}"
+    )
     assert "ruff" in failed[0].message.lower()
 
 
@@ -679,9 +694,7 @@ def test_lint_analyzer_f541_to_hint(monkeypatch):
     assert len(lint_findings) >= 1
     f541 = lint_findings[0]
     assert f541.lint_code == "F541"
-    assert f541.severity == Severity.HINT, (
-        f"Expected F541 → HINT, got {f541.severity}"
-    )
+    assert f541.severity == Severity.HINT, f"Expected F541 → HINT, got {f541.severity}"
 
 
 def test_lint_analyzer_f401_mapping(monkeypatch):
@@ -779,7 +792,9 @@ def test_residue_analyzer_empty_file(tmp_path):
     )
     analyzer = ResidueAnalyzer()
     findings = analyzer.analyze(context)
-    assert findings == [], f"Expected empty findings for clean file, got {[f.type for f in findings]}"
+    assert findings == [], (
+        f"Expected empty findings for clean file, got {[f.type for f in findings]}"
+    )
 
 
 def test_residue_detects_unwired_lint_plumbing(tmp_path):
@@ -862,13 +877,16 @@ def test_residue_detects_todo_marker(tmp_path):
     findings = analyzer.analyze(context)
 
     markers = [f for f in findings if f.type == "residue_marker"]
-    assert len(markers) >= 1, f"Expected residue_marker for TODO, got {[f.type for f in findings]}"
+    assert len(markers) >= 1, (
+        f"Expected residue_marker for TODO, got {[f.type for f in findings]}"
+    )
     assert any("TODO" in m.message for m in markers)
 
 
 # ---------------------------------------------------------------------------
 # Cargo check oracle — mocked subprocess.run
 # ---------------------------------------------------------------------------
+
 
 # Shared helper: build a minimal cargo-compiler-message JSON line.
 def _cargo_diag_line(
@@ -930,7 +948,7 @@ def test_cargo_check_mocked(tmp_path, monkeypatch):
 
     root = tmp_path / "cargo_proj"
     root.mkdir()
-    (root / "Cargo.toml").write_text("[package]\nname = \"test\"\n")
+    (root / "Cargo.toml").write_text('[package]\nname = "test"\n')
 
     config = AnalysisConfig(check_rust=True, run_cargo_check=True)
     context = AnalysisContext(files={}, config=config, project_root=root)
@@ -938,7 +956,9 @@ def test_cargo_check_mocked(tmp_path, monkeypatch):
     findings = _run_cargo_check(context, root)
 
     diags = [f for f in findings if f.type == "rust_diagnostic"]
-    assert len(diags) >= 1, f"Expected >=1 rust_diagnostic, got {[f.type for f in findings]}"
+    assert len(diags) >= 1, (
+        f"Expected >=1 rust_diagnostic, got {[f.type for f in findings]}"
+    )
     assert "unused_imports" in diags[0].message
     assert diags[0].severity == Severity.WARNING
     assert diags[0].lint_source == "cargo-check"
@@ -1033,7 +1053,7 @@ def test_cargo_clippy_mocked(tmp_path, monkeypatch):
 
     root = tmp_path / "cargo_proj"
     root.mkdir()
-    (root / "Cargo.toml").write_text("[package]\nname = \"test\"\n")
+    (root / "Cargo.toml").write_text('[package]\nname = "test"\n')
 
     config = AnalysisConfig(check_rust=True, run_cargo_clippy=True)
     context = AnalysisContext(files={}, config=config, project_root=root)
@@ -1041,7 +1061,9 @@ def test_cargo_clippy_mocked(tmp_path, monkeypatch):
     findings = _run_cargo_clippy(context, root)
 
     diags = [f for f in findings if f.type == "rust_diagnostic"]
-    assert len(diags) >= 1, f"Expected >=1 rust_diagnostic, got {[f.type for f in findings]}"
+    assert len(diags) >= 1, (
+        f"Expected >=1 rust_diagnostic, got {[f.type for f in findings]}"
+    )
     assert "unused_imports" in diags[0].message
     assert diags[0].lint_source == "cargo-clippy"
     # Clippy diagnostic types get specific evidence kind
@@ -1057,18 +1079,15 @@ def test_cargo_clippy_high_signal(tmp_path, monkeypatch):
     )
 
     # Two diagnostics in one output — dead_code (warning) and dbg_macro (error)
-    stdout = (
-        _cargo_diag_line(
-            code="dead_code",
-            level="warning",
-            message="struct `Unused` is never constructed",
-        )
-        + _cargo_diag_line(
-            code="clippy::dbg_macro",
-            level="error",
-            message="`dbg!` macro in production code",
-            line_start=10,
-        )
+    stdout = _cargo_diag_line(
+        code="dead_code",
+        level="warning",
+        message="struct `Unused` is never constructed",
+    ) + _cargo_diag_line(
+        code="clippy::dbg_macro",
+        level="error",
+        message="`dbg!` macro in production code",
+        line_start=10,
     )
     monkeypatch.setattr(
         "subprocess.run", lambda *args, **kwargs: _mock_cargo_run(stdout=stdout)
@@ -1076,7 +1095,7 @@ def test_cargo_clippy_high_signal(tmp_path, monkeypatch):
 
     root = tmp_path / "cargo_proj"
     root.mkdir()
-    (root / "Cargo.toml").write_text("[package]\nname = \"test\"\n")
+    (root / "Cargo.toml").write_text('[package]\nname = "test"\n')
 
     config = AnalysisConfig(check_rust=True, run_cargo_clippy=True)
     context = AnalysisContext(files={}, config=config, project_root=root)
@@ -1084,7 +1103,9 @@ def test_cargo_clippy_high_signal(tmp_path, monkeypatch):
     findings = _run_cargo_clippy(context, root)
 
     diags = [f for f in findings if f.type == "rust_diagnostic"]
-    assert len(diags) == 2, f"Expected 2 diagnostics, got {len(diags)}: {[d.message for d in diags]}"
+    assert len(diags) == 2, (
+        f"Expected 2 diagnostics, got {len(diags)}: {[d.message for d in diags]}"
+    )
 
     # Collect claims from evidence — 'subject' holds the diagnostic code
     claims: dict[str, str] = {}
@@ -1144,18 +1165,20 @@ def test_read_file_large(tmp_path, monkeypatch):
 
     def _mock_stat(path_self, *, follow_symlinks=True):
         if path_self == large_file:
-            return os.stat_result((
-                0o100644,  # st_mode — regular file
-                0,         # st_ino
-                0,         # st_dev
-                0,         # st_nlink
-                0,         # st_uid
-                0,         # st_gid
-                11_000_000,  # st_size — larger than 10 MB threshold
-                0,         # st_atime
-                0,         # st_mtime
-                0,         # st_ctime
-            ))
+            return os.stat_result(
+                (
+                    0o100644,  # st_mode — regular file
+                    0,  # st_ino
+                    0,  # st_dev
+                    0,  # st_nlink
+                    0,  # st_uid
+                    0,  # st_gid
+                    11_000_000,  # st_size — larger than 10 MB threshold
+                    0,  # st_atime
+                    0,  # st_mtime
+                    0,  # st_ctime
+                )
+            )
         return original_stat(path_self, follow_symlinks=follow_symlinks)
 
     monkeypatch.setattr(Path, "stat", _mock_stat)
@@ -1181,6 +1204,7 @@ def test_read_file_normal(tmp_path):
 
 # --- 1. test_rust_analyzer_properties: name + capabilities + languages ---
 
+
 def test_rust_analyzer_properties():
     """RustAnalyzer.name='rust', capabilities={LINT, STYLE}, languages={'rust','toml'}."""
     analyzer = RustAnalyzer()
@@ -1193,13 +1217,13 @@ def test_rust_analyzer_properties():
 
 # --- 2. test_discover_cargo_roots_workspace ---
 
+
 def test_discover_cargo_roots_workspace(tmp_path):
     """_discover_cargo_roots finds workspace members from [workspace] in root Cargo.toml."""
     root = tmp_path / "ws"
     root.mkdir()
     (root / "Cargo.toml").write_text(
-        '[workspace]\nmembers = ["crate1", "crate2"]\n'
-        '[package]\nname = "ws"\n'
+        '[workspace]\nmembers = ["crate1", "crate2"]\n[package]\nname = "ws"\n'
     )
     # Member crate1 — has Cargo.toml + .rs file
     (root / "crate1").mkdir()
@@ -1230,6 +1254,7 @@ def test_discover_cargo_roots_workspace(tmp_path):
 
 # --- 3. test_scan_cargo_root_with_dead_code: [lints.rust] recognized as lint policy ---
 
+
 def test_scan_cargo_root_with_dead_code(tmp_path):
     """Cargo.toml with [lints.rust] dead_code = 'allow' → no rust_lint_policy_missing."""
     cargo_content = (
@@ -1250,6 +1275,7 @@ def test_scan_cargo_root_with_dead_code(tmp_path):
 
 
 # --- 4. test_run_cargo_command_with_check: command construction ---
+
 
 def test_run_cargo_command_with_check(tmp_path, monkeypatch):
     """_run_cargo_command replaces command[0] with resolved cargo binary path."""
@@ -1286,6 +1312,7 @@ def test_run_cargo_command_with_check(tmp_path, monkeypatch):
 
 # --- 5. test_parse_cargo_json_output_empty: empty NDJSON → [] ---
 
+
 def test_parse_cargo_json_output_empty(tmp_path):
     """_parse_cargo_json_output on empty stdout returns empty list."""
     root = tmp_path
@@ -1297,6 +1324,7 @@ def test_parse_cargo_json_output_empty(tmp_path):
 
 
 # --- 6. test_parse_cargo_json_output_malformed_line: non-JSON line skipped ---
+
 
 def test_parse_cargo_json_output_malformed_line(tmp_path):
     """NDJSON with one non-JSON line → non-JSON line skipped, valid diags kept."""
@@ -1316,6 +1344,7 @@ def test_parse_cargo_json_output_malformed_line(tmp_path):
 
 
 # --- 7. test_read_file_with_error: _read_file returns None on read failure ---
+
 
 def test_read_file_with_error(tmp_path, monkeypatch):
     """_read_file returns None (silent) when read_text raises an exception."""
@@ -1337,6 +1366,7 @@ def test_read_file_with_error(tmp_path, monkeypatch):
 
 
 # --- 8. test_cargo_oracle_integration: run_cargo=True triggers oracle via analyze() ---
+
 
 def test_cargo_oracle_integration(tmp_path, monkeypatch):
     """run_cargo=True triggers cargo check + cargo clippy through analyze()."""
@@ -1374,7 +1404,9 @@ def test_cargo_oracle_integration(tmp_path, monkeypatch):
 
     assert isinstance(findings, list)
     # run_cargo=True should trigger both check AND clippy (2 subprocess calls)
-    assert len(run_calls) >= 1, f"Expected >=1 subprocess.run call, got {len(run_calls)}"
+    assert len(run_calls) >= 1, (
+        f"Expected >=1 subprocess.run call, got {len(run_calls)}"
+    )
     # Verify cwd is set to the project root for at least one call
     cwds = [call.get("cwd") for call in run_calls]
     assert str(tmp_path) in cwds, f"cwd={cwds} should contain {tmp_path}"
@@ -1441,9 +1473,7 @@ def test_ruff_command_prefix_import_fallback(monkeypatch):
     import sys as _sys
 
     # Binary not found on PATH
-    monkeypatch.setattr(
-        "imodent.analyzers.lint.shutil.which", lambda _cmd: None
-    )
+    monkeypatch.setattr("imodent.analyzers.lint.shutil.which", lambda _cmd: None)
     # ruff module IS importable in this environment — fallback path should succeed
     result = _ruff_command_prefix()
     assert result is not None, "Fallback should succeed when ruff module is importable"
@@ -1454,9 +1484,7 @@ def test_ruff_command_prefix_import_fallback(monkeypatch):
 
 def test_ruff_command_prefix_returns_none_when_all_fail(monkeypatch):
     """_ruff_command_prefix returns None when both binary and module import fail."""
-    monkeypatch.setattr(
-        "imodent.analyzers.lint.shutil.which", lambda _cmd: None
-    )
+    monkeypatch.setattr("imodent.analyzers.lint.shutil.which", lambda _cmd: None)
     # Patch builtins.__import__ to raise ImportError for 'ruff'
     original_import = __import__
 
@@ -1470,6 +1498,7 @@ def test_ruff_command_prefix_returns_none_when_all_fail(monkeypatch):
     # Need to reload the module so the patched __import__ takes effect,
     # since ruff may already be cached in sys.modules.
     import sys as _sys
+
     _ruff_mod = _sys.modules.pop("ruff", None)
     try:
         result = _ruff_command_prefix()
@@ -1554,7 +1583,9 @@ def test_package_init_reexport_f401(monkeypatch):
     assert primary[0].get("claim") == "unused_import"
 
     # Context evidence with public_api_reexport
-    context_ev = [e for e in evidence_entries if e.get("claim") == "public_api_reexport"]
+    context_ev = [
+        e for e in evidence_entries if e.get("claim") == "public_api_reexport"
+    ]
     assert len(context_ev) == 1, (
         f"Expected 1 context evidence with public_api_reexport, got {context_ev}"
     )
@@ -1747,7 +1778,9 @@ def test_ruff_finding_has_evidence_attached(monkeypatch):
 
     # Evidence entries must exist and carry the claim field
     evidence_entries = f401.data.get("evidence", [])
-    assert len(evidence_entries) >= 1, "F401 finding must have at least 1 evidence entry"
+    assert len(evidence_entries) >= 1, (
+        "F401 finding must have at least 1 evidence entry"
+    )
     first_ev = evidence_entries[0]
     assert "claim" in first_ev, f"Evidence entry missing 'claim' field: {first_ev}"
     assert first_ev["claim"] == "unused_import"
@@ -1844,7 +1877,9 @@ def test_severity_for_ruff_code_f8_substrings():
     assert _severity_for_ruff_code("F823") == Severity.ERROR
     assert _severity_for_ruff_code("F801") == Severity.ERROR  # F80 still starts with F8
     assert _severity_for_ruff_code("F841") == Severity.ERROR  # F84 still starts with F8
-    assert _severity_for_ruff_code("F401") == Severity.WARNING  # F40 doesn't start with F8
+    assert (
+        _severity_for_ruff_code("F401") == Severity.WARNING
+    )  # F40 doesn't start with F8
 
 
 # --- Wildcard import info (user test #7, lines 366-410) ---
@@ -1903,9 +1938,7 @@ def test_extract_import_info_wildcard(monkeypatch):
     # import_info_from_diagnostic extracts "os" from message
     # source_line.strip().startswith("import ") → False for "from os import *"
     # "." in "os" → False, so module=None, name="os"
-    assert import_info.get("name") == "os", (
-        f"Expected name='os', got {import_info}"
-    )
+    assert import_info.get("name") == "os", f"Expected name='os', got {import_info}"
     assert import_info.get("module") is None
 
 
@@ -1964,15 +1997,28 @@ def test_proof_state_for_ruff_code_review_public_api():
 
 def test_proof_state_for_ruff_code_proven_unused():
     """F401 and F841 → PROVEN_UNUSED (line 288)."""
-    assert _proof_state_for_ruff_code("F401", Path("/fake/module.py")) == "PROVEN_UNUSED"
-    assert _proof_state_for_ruff_code("F841", Path("/fake/module.py")) == "PROVEN_UNUSED"
+    assert (
+        _proof_state_for_ruff_code("F401", Path("/fake/module.py")) == "PROVEN_UNUSED"
+    )
+    assert (
+        _proof_state_for_ruff_code("F841", Path("/fake/module.py")) == "PROVEN_UNUSED"
+    )
 
 
 def test_proof_state_for_ruff_code_externally_verified():
     """Non-F401/F841 codes → EXTERNALLY_VERIFIED (line 289)."""
-    assert _proof_state_for_ruff_code("F811", Path("/fake/module.py")) == "EXTERNALLY_VERIFIED"
-    assert _proof_state_for_ruff_code("E501", Path("/fake/module.py")) == "EXTERNALLY_VERIFIED"
-    assert _proof_state_for_ruff_code("F821", Path("/fake/module.py")) == "EXTERNALLY_VERIFIED"
+    assert (
+        _proof_state_for_ruff_code("F811", Path("/fake/module.py"))
+        == "EXTERNALLY_VERIFIED"
+    )
+    assert (
+        _proof_state_for_ruff_code("E501", Path("/fake/module.py"))
+        == "EXTERNALLY_VERIFIED"
+    )
+    assert (
+        _proof_state_for_ruff_code("F821", Path("/fake/module.py"))
+        == "EXTERNALLY_VERIFIED"
+    )
 
 
 # --- _first_backtick_value empty (line 307 in lint.py) ---
@@ -2205,6 +2251,7 @@ def test_lint_analyzer_f841_full_flow(monkeypatch):
 
 # --- _severity_for_cargo_level / _strength_for_cargo_level / _claim_for_cargo_level ---
 
+
 def test_severity_for_cargo_level_note_and_help():
     """_severity_for_cargo_level maps 'note'/'help' → HINT."""
     from imodent.analyzers.rust import _severity_for_cargo_level
@@ -2270,6 +2317,7 @@ def test_rust_analyzer_no_rust_or_toml_files():
 
 # --- _scan_cargo_root: cargo-machete reference (line 323) ---
 
+
 def test_scan_cargo_root_cargo_machete_present(tmp_path):
     """Cargo.toml mentions 'cargo-machete' → no rust_cargo_machete_missing."""
     cargo_content = (
@@ -2291,6 +2339,7 @@ def test_scan_cargo_root_cargo_machete_present(tmp_path):
 
 # --- _scan_cargo_root: test file skip (line 433) ---
 
+
 def test_scan_cargo_root_test_file_skipped(tmp_path):
     """Residue markers inside tests/ directory are skipped (line 433)."""
     cargo_content = (
@@ -2306,8 +2355,12 @@ def test_scan_cargo_root_test_file_skipped(tmp_path):
     files: dict[Path, FileInfo] = {}
     cargo_path = tmp_path / "Cargo.toml"
     cargo_path.write_text(cargo_content)
-    files[cargo_path] = FileInfo(path=cargo_path, content=cargo_content, language="toml")
-    files[test_rs] = FileInfo(path=test_rs, content=test_rs.read_text(), language="rust")
+    files[cargo_path] = FileInfo(
+        path=cargo_path, content=cargo_content, language="toml"
+    )
+    files[test_rs] = FileInfo(
+        path=test_rs, content=test_rs.read_text(), language="rust"
+    )
 
     config = AnalysisConfig(check_rust=True)
     context = AnalysisContext(files=files, config=config, project_root=tmp_path)
@@ -2324,19 +2377,14 @@ def test_scan_cargo_root_test_file_skipped(tmp_path):
 
 # --- _scan_cargo_root: unsafe without safety comment (lines 454-464) ---
 
+
 def test_scan_cargo_root_unsafe_no_safety(tmp_path):
     """unsafe {} without // SAFETY: comment → rust_unsafe_no_safety finding."""
     cargo_content = (
         '[package]\nname = "test"\nversion = "0.1.0"\n\n'
         '[lints]\nrust.missing_docs = "allow"\n'
     )
-    rs_content = (
-        "fn main() {\n"
-        "    unsafe {\n"
-        '        println!("hello");\n'
-        "    }\n"
-        "}\n"
-    )
+    rs_content = 'fn main() {\n    unsafe {\n        println!("hello");\n    }\n}\n'
     context = _build_context(tmp_path, cargo_content, rs_content)
 
     analyzer = RustAnalyzer()
@@ -2352,6 +2400,7 @@ def test_scan_cargo_root_unsafe_no_safety(tmp_path):
 
 
 # --- _scan_cargo_root: unsafe WITH safety comment (suppress) ---
+
 
 def test_scan_cargo_root_unsafe_with_safety(tmp_path):
     """unsafe {} with // SAFETY: comment → NO rust_unsafe_no_safety finding."""
@@ -2375,12 +2424,11 @@ def test_scan_cargo_root_unsafe_with_safety(tmp_path):
     findings = analyzer.analyze(context)
 
     unsafe = _findings_by_type(findings, "rust_unsafe_no_safety")
-    assert len(unsafe) == 0, (
-        f"SAFETY comment present → should not flag, got {unsafe}"
-    )
+    assert len(unsafe) == 0, f"SAFETY comment present → should not flag, got {unsafe}"
 
 
 # --- _scan_cargo_root: unwrap in library code (line 479) ---
+
 
 def test_scan_cargo_root_unwrap_in_library(tmp_path):
     """.unwrap() in non-test code → rust_unwrap_in_library finding."""
@@ -2405,6 +2453,7 @@ def test_scan_cargo_root_unwrap_in_library(tmp_path):
 
 # --- _parse_cargo_json_output: returncode != 0 + no findings (line 586) ---
 
+
 def test_cargo_check_nonzero_returncode_no_diags(tmp_path, monkeypatch):
     """cargo exits non-zero with no compiler-message lines → rust_oracle_failed."""
     monkeypatch.setattr(
@@ -2416,9 +2465,7 @@ def test_cargo_check_nonzero_returncode_no_diags(tmp_path, monkeypatch):
     mock_result.stdout = ""  # No compiler-message output
     mock_result.stderr = "error: build failed\n"
 
-    monkeypatch.setattr(
-        "subprocess.run", lambda *args, **kwargs: mock_result
-    )
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: mock_result)
 
     root = tmp_path / "cargo_proj"
     root.mkdir()
@@ -2438,21 +2485,28 @@ def test_cargo_check_nonzero_returncode_no_diags(tmp_path, monkeypatch):
 
 # --- _parse_cargo_json_output: non-compiler-message reason (line 628) ---
 
+
 def test_parse_cargo_json_output_non_compiler_message(tmp_path):
     """NDJSON line with reason='build-finished' → skipped (line 628)."""
     root = tmp_path
     config = AnalysisConfig(check_rust=True)
     context = AnalysisContext(files={}, config=config, project_root=root)
 
-    stdout = json.dumps({
-        "reason": "build-finished",
-        "success": True,
-    }) + "\n"
+    stdout = (
+        json.dumps(
+            {
+                "reason": "build-finished",
+                "success": True,
+            }
+        )
+        + "\n"
+    )
     findings = _parse_cargo_json_output(context, root, stdout, "check")
     assert findings == [], f"non-compiler-message should be skipped, got {findings}"
 
 
 # --- _parse_cargo_json_output: message not a dict (line 631) ---
+
 
 def test_parse_cargo_json_output_message_not_dict(tmp_path):
     """NDJSON with compiler-message where message is a string → skipped (line 631)."""
@@ -2460,15 +2514,21 @@ def test_parse_cargo_json_output_message_not_dict(tmp_path):
     config = AnalysisConfig(check_rust=True)
     context = AnalysisContext(files={}, config=config, project_root=root)
 
-    stdout = json.dumps({
-        "reason": "compiler-message",
-        "message": "just a string, not a dict",
-    }) + "\n"
+    stdout = (
+        json.dumps(
+            {
+                "reason": "compiler-message",
+                "message": "just a string, not a dict",
+            }
+        )
+        + "\n"
+    )
     findings = _parse_cargo_json_output(context, root, stdout, "check")
     assert findings == [], f"non-dict message should be skipped, got {findings}"
 
 
 # --- _parse_cargo_json_output: JSON parse error (line 624-625) ---
+
 
 def test_parse_cargo_json_output_json_decode_error(tmp_path):
     """NDJSON with a line that starts with '{' but is not valid JSON → skipped."""
@@ -2478,8 +2538,9 @@ def test_parse_cargo_json_output_json_decode_error(tmp_path):
 
     # Valid JSON followed by a garbled line
     stdout = (
-        _cargo_diag_line(code="unused_imports", level="warning",
-                         message="unused import")
+        _cargo_diag_line(
+            code="unused_imports", level="warning", message="unused import"
+        )
         + "{broken json that starts with brace\n"
     )
     findings = _parse_cargo_json_output(context, root, stdout, "check")
@@ -2489,6 +2550,7 @@ def test_parse_cargo_json_output_json_decode_error(tmp_path):
 
 
 # --- _parse_cargo_json_output: non-primary span fallback (line 648) ---
+
 
 def test_parse_cargo_json_output_non_primary_span_fallback(tmp_path):
     """cargo diag with only non-primary spans → falls back to spans[0] (line 648)."""
@@ -2534,6 +2596,7 @@ def test_parse_cargo_json_output_non_primary_span_fallback(tmp_path):
 
 # --- _parse_cargo_json_output: empty spans list → falls back to Cargo.toml (line 667-669) ---
 
+
 def test_parse_cargo_json_output_empty_spans(tmp_path):
     """cargo diag with empty spans list → file falls back to Cargo.toml (line 667-669)."""
     root = tmp_path
@@ -2560,6 +2623,7 @@ def test_parse_cargo_json_output_empty_spans(tmp_path):
 
 
 # --- _parse_cargo_json_output: span without file_name (line 667) ---
+
 
 def test_parse_cargo_json_output_span_no_filename(tmp_path):
     """cargo diag span lacks file_name → file falls back to Cargo.toml (line 667)."""
@@ -2597,6 +2661,7 @@ def test_parse_cargo_json_output_span_no_filename(tmp_path):
 
 # --- _scan_cargo_root: rust file unreadable → continue (lines 371, 408) ---
 
+
 def test_scan_cargo_root_rust_file_unreadable(tmp_path, monkeypatch):
     """Unreadable .rs file (None content) → broad-allow + residue scans skip it."""
     cargo_content = (
@@ -2604,9 +2669,7 @@ def test_scan_cargo_root_rust_file_unreadable(tmp_path, monkeypatch):
         '[lints]\nrust.missing_docs = "allow"\n'
     )
     # Create a normal project with an .rs file that will fail to read
-    cargo_path, rs_path = _make_cargo_project(
-        tmp_path, cargo_content, "fn main() {}\n"
-    )
+    cargo_path, rs_path = _make_cargo_project(tmp_path, cargo_content, "fn main() {}\n")
     # Mock _read_file to return None for the .rs file ONLY
     # (we need the Cargo.toml read to succeed for config checks)
     original_read_file = _read_file
@@ -2616,46 +2679,35 @@ def test_scan_cargo_root_rust_file_unreadable(tmp_path, monkeypatch):
             return None
         return original_read_file(path)
 
-    monkeypatch.setattr(
-        "imodent.analyzers.rust._read_file", _mock_read_file
-    )
+    monkeypatch.setattr("imodent.analyzers.rust._read_file", _mock_read_file)
 
     files: dict[Path, FileInfo] = {}
     files[cargo_path] = FileInfo(
         path=cargo_path, content=cargo_content, language="toml"
     )
-    files[rs_path] = FileInfo(
-        path=rs_path, content="fn main() {}\n", language="rust"
-    )
+    files[rs_path] = FileInfo(path=rs_path, content="fn main() {}\n", language="rust")
 
     config = AnalysisConfig(check_rust=True)
-    context = AnalysisContext(
-        files=files, config=config, project_root=tmp_path
-    )
+    context = AnalysisContext(files=files, config=config, project_root=tmp_path)
 
     analyzer = RustAnalyzer()
     findings = analyzer.analyze(context)
 
     # Should not crash — unreadable .rs files are skipped gracefully
     broad = _findings_by_type(findings, "rust_broad_allow")
-    assert len(broad) == 0, (
-        "Unreadable .rs should produce no broad_allow findings"
-    )
+    assert len(broad) == 0, "Unreadable .rs should produce no broad_allow findings"
     residue = _findings_by_type(findings, "rust_residue_marker")
-    assert len(residue) == 0, (
-        "Unreadable .rs should produce no residue markers"
-    )
+    assert len(residue) == 0, "Unreadable .rs should produce no residue markers"
 
 
 # --- RustAnalyzer: no rust files + toml only (line 59: empty return path) ---
+
 
 def test_rust_analyzer_toml_only_with_check_rust(tmp_path):
     """Analyzer with only .toml files and no .rs files → still runs config scan."""
     analyzer = RustAnalyzer()
     cargo_toml = tmp_path / "Cargo.toml"
-    cargo_content = (
-        '[package]\nname = "test"\nversion = "0.1.0"\n'
-    )
+    cargo_content = '[package]\nname = "test"\nversion = "0.1.0"\n'
     cargo_toml.write_text(cargo_content)
     file_info = FileInfo(
         path=cargo_toml,

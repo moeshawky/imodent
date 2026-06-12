@@ -23,6 +23,7 @@ from imodent.strategies.yaml import YAMLStrategy
 # Helper: mock a module import failure
 # ---------------------------------------------------------------------------
 
+
 def _mock_import_blocker(blocked_names: list[str]):
     """Return a __import__ replacement that raises ImportError for blocked names.
 
@@ -42,6 +43,7 @@ def _mock_import_blocker(blocked_names: list[str]):
 # ---------------------------------------------------------------------------
 # Detection tests
 # ---------------------------------------------------------------------------
+
 
 def test_python_strategy_detect_valid(sample_py_content):
     """PythonStrategy.detect() returns True for valid Python source."""
@@ -80,6 +82,7 @@ def test_strategies_detect_empty(empty_content):
 # Fix tests — valid content
 # ---------------------------------------------------------------------------
 
+
 def test_python_fix_valid(sample_py_content):
     """PythonStrategy.fix() returns FixResult(success=True) for valid Python."""
     result = PythonStrategy().fix(sample_py_content)
@@ -107,9 +110,12 @@ def test_jsonl_fix_valid(sample_jsonl_content):
     # Validate the original objects can be recovered from the fixed output
     # by re-reading all multi-line JSON objects
     import re
+
     # Split by lines that start a JSON object ({ or [)
-    chunks = re.split(r'\n(?=[\{\[])', result.content.strip())
-    parsed = [json.loads(chunk) for chunk in chunks if chunk.strip().startswith(("{", "["))]
+    chunks = re.split(r"\n(?=[\{\[])", result.content.strip())
+    parsed = [
+        json.loads(chunk) for chunk in chunks if chunk.strip().startswith(("{", "["))
+    ]
     assert len(parsed) == 3, f"Expected 3 JSON objects, got {len(parsed)}"
     for obj in parsed:
         assert isinstance(obj, dict)
@@ -129,6 +135,7 @@ def test_yaml_fix_valid(sample_yaml_content):
 # ---------------------------------------------------------------------------
 # Validate tests
 # ---------------------------------------------------------------------------
+
 
 def test_python_validate_valid(sample_py_content):
     """PythonStrategy.validate() returns (True, None) for valid Python."""
@@ -155,6 +162,7 @@ def test_yaml_validate_valid(sample_yaml_content):
 # Fix tests — broken content without --force
 # ---------------------------------------------------------------------------
 
+
 def test_json_fix_broken_no_force(malformed_json_content, monkeypatch):
     """JSONStrategy.fix() with force=False returns FixResult(success=False) for broken JSON.
 
@@ -162,6 +170,7 @@ def test_json_fix_broken_no_force(malformed_json_content, monkeypatch):
     (it can only fix valid JSON, not structurally broken JSON).
     """
     import builtins
+
     _orig_import = builtins.__import__
 
     def _no_json_repair(name, *args, **kwargs):
@@ -192,6 +201,7 @@ def test_python_fix_syntax_error_no_force(malformed_py_content):
 # JSONL partial fix with --force
 # ---------------------------------------------------------------------------
 
+
 def test_jsonl_fix_mixed_lines(malformed_jsonl_content):
     """JSONLStrategy.fix() with force=True produces partial fix for mixed valid/invalid lines."""
     result = JSONLStrategy().fix(malformed_jsonl_content, force=True)
@@ -199,12 +209,15 @@ def test_jsonl_fix_mixed_lines(malformed_jsonl_content):
     assert len(result.errors) > 0, "Should report errors for broken JSONL lines"
     # Valid lines should still be reformatted
     lines = result.content.strip().splitlines()
-    assert len(lines) >= 2, "Output should have at least 2 lines (including preserved broken)"
+    assert len(lines) >= 2, (
+        "Output should have at least 2 lines (including preserved broken)"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Indentation tests
 # ---------------------------------------------------------------------------
+
 
 def test_python_indent_2_uses_ast_fallback():
     """PythonStrategy.fix() with indent_size=2 produces 2-space indented Python.
@@ -222,6 +235,7 @@ def test_python_indent_2_uses_ast_fallback():
 # ---------------------------------------------------------------------------
 # Strategy property tests
 # ---------------------------------------------------------------------------
+
 
 def test_strategy_names():
     """Each strategy has a unique, non-empty name."""
@@ -275,9 +289,9 @@ def test_python_strategy_black_not_installed():
         assert result.success is True, (
             f"AST fallback should succeed, got errors: {result.errors}"
         )
-        assert any(
-            "black not installed" in w for w in result.warnings
-        ), f"Expected 'black not installed' warning, got: {result.warnings}"
+        assert any("black not installed" in w for w in result.warnings), (
+            f"Expected 'black not installed' warning, got: {result.warnings}"
+        )
     finally:
         sys.meta_path.remove(finder)
         if saved_black is not None:
@@ -423,6 +437,7 @@ def test_python_strategy_fix_empty_function_body():
 # YAML — ruamel.yaml not installed → PyYAML fallback
 # ---------------------------------------------------------------------------
 
+
 def test_yaml_strategy_ruamel_not_installed(monkeypatch, sample_yaml_content):
     """YAMLStrategy.fix() falls back to PyYAML when ruamel.yaml is unavailable.
 
@@ -431,7 +446,8 @@ def test_yaml_strategy_ruamel_not_installed(monkeypatch, sample_yaml_content):
     to the Stage-2 PyYAML path (yaml_strategy.py:136-139 → 141-191).
     """
     monkeypatch.setattr(
-        builtins, "__import__",
+        builtins,
+        "__import__",
         _mock_import_blocker(["ruamel.yaml", "ruamel"]),
     )
     result = YAMLStrategy().fix(sample_yaml_content)
@@ -456,7 +472,8 @@ def test_yaml_strategy_pyyaml_not_installed(monkeypatch, sample_yaml_content):
     the ImportError propagates to the caller.  This test documents that behaviour.
     """
     monkeypatch.setattr(
-        builtins, "__import__",
+        builtins,
+        "__import__",
         _mock_import_blocker(["yaml", "ruamel.yaml", "ruamel"]),
     )
     with pytest.raises(ImportError, match="yaml"):
@@ -500,6 +517,7 @@ def test_yaml_strategy_fix_multiple_docs(sample_yaml_content):
 # JSON — json-repair not installed → stdlib json fallback
 # ---------------------------------------------------------------------------
 
+
 def test_json_strategy_json_repair_not_installed(monkeypatch, sample_json_content):
     """JSONStrategy.fix() falls back to stdlib json when json-repair is absent.
 
@@ -508,7 +526,8 @@ def test_json_strategy_json_repair_not_installed(monkeypatch, sample_json_conten
     through to the Stage-2 stdlib-json path (json.py:107-131).
     """
     monkeypatch.setattr(
-        builtins, "__import__",
+        builtins,
+        "__import__",
         _mock_import_blocker(["json_repair"]),
     )
     result = JSONStrategy().fix(sample_json_content)
@@ -532,7 +551,8 @@ def test_json_strategy_fix_invalid_with_force(monkeypatch, malformed_json_conten
     """
     # Block json-repair so we exercise the full fallback chain
     monkeypatch.setattr(
-        builtins, "__import__",
+        builtins,
+        "__import__",
         _mock_import_blocker(["json_repair"]),
     )
     result = JSONStrategy().fix(malformed_json_content, force=True)
@@ -547,6 +567,7 @@ def test_json_strategy_fix_invalid_with_force(monkeypatch, malformed_json_conten
 # ---------------------------------------------------------------------------
 # JSONL — validate error paths
 # ---------------------------------------------------------------------------
+
 
 def test_jsonl_strategy_validate_invalid_line():
     """JSONLStrategy.validate() returns (False, ...) for one invalid line.
@@ -752,12 +773,7 @@ def test_python_reindent_preserves_blank_lines():
     at python.py:308-310 appends an empty string for blank lines when
     ``(lineno - last_block_line) <= 3``.
     """
-    content = (
-        "def f():\n"
-        "    x = 1\n"
-        "\n"
-        "    y = 2\n"
-    )
+    content = "def f():\n    x = 1\n\n    y = 2\n"
     ast_info = _build_ast_info(content)
     result = PythonStrategy()._reindent(content, ast_info, indent_size=2)
     lines = result.splitlines()
@@ -919,7 +935,7 @@ def test_python_ast_visitor_if_for_while_with_try():
     ast_info = _build_ast_info(content)
     result = PythonStrategy()._reindent(content, ast_info, indent_size=2)
     assert "def f():" in result
-    # indent_size=2 × level 1 → 2-space indent for class/block body lines
+    # indent_size=2 * level 1 -> 2-space indent for class/block body lines
     assert "  for x in" in result
     assert 1 in ast_info["levels"]  # def f()
     assert 1 in ast_info["block_starts"]
@@ -982,12 +998,7 @@ def test_python_ast_visitor_decorators():
     The visitor iterates ``node.decorator_list`` and visits each decorator
     at the same level as the decorated function/class (line 82-83).
     """
-    content = (
-        "@decorator1\n"
-        "@decorator2\n"
-        "def f():\n"
-        "    pass\n"
-    )
+    content = "@decorator1\n@decorator2\ndef f():\n    pass\n"
     ast_info = _build_ast_info(content)
     result = PythonStrategy()._reindent(content, ast_info, indent_size=2)
     assert "@decorator1" in result
@@ -1027,13 +1038,7 @@ def test_python_reindent_continuation_lines():
     and is popped when a closing bracket is encountered (line 330).
     Calls _reindent() directly.
     """
-    content = (
-        "def f():\n"
-        "    x = some_function(\n"
-        "        arg1,\n"
-        "        arg2,\n"
-        "    )\n"
-    )
+    content = "def f():\n    x = some_function(\n        arg1,\n        arg2,\n    )\n"
     ast_info = _build_ast_info(content)
     result = PythonStrategy()._reindent(content, ast_info, indent_size=2)
     assert "some_function(" in result
@@ -1062,9 +1067,9 @@ def test_python_fix_black_invalid_output(monkeypatch):
     content = "x = 1\n"
     result = PythonStrategy().fix(content)
     # Black output is invalid → falls through to AST; AST may or may not fix it
-    assert any(
-        "Black output invalid" in w for w in result.warnings
-    ), f"Expected black-output-invalid warning, got: {result.warnings}"
+    assert any("Black output invalid" in w for w in result.warnings), (
+        f"Expected black-output-invalid warning, got: {result.warnings}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1087,9 +1092,9 @@ def test_python_fix_black_raises_exception(monkeypatch):
     monkeypatch.setattr(black_mod, "format_str", _crashing_format)
     content = "x = 1\n"
     result = PythonStrategy().fix(content)
-    assert any(
-        "Black failed" in w for w in result.warnings
-    ), f"Expected black-failed warning, got: {result.warnings}"
+    assert any("Black failed" in w for w in result.warnings), (
+        f"Expected black-failed warning, got: {result.warnings}"
+    )
     # AST fallback should succeed on simple content
     assert result.success is True
 
@@ -1113,9 +1118,9 @@ def test_python_fix_ast_parse_syntax_error_during_fix():
     result = PythonStrategy().fix(content, indent_size=2, force=True)
     # The fix may succeed or fail, but the AST-parse-SyntaxError branch
     # should produce a warning about AST parsing
-    assert any(
-        "Could not parse AST" in w for w in result.warnings
-    ), f"Expected AST-parse warning, got: {result.warnings}"
+    assert any("Could not parse AST" in w for w in result.warnings), (
+        f"Expected AST-parse warning, got: {result.warnings}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1133,9 +1138,9 @@ def test_python_fix_result_still_invalid():
     content = "def 123():\n    pass\n"
     result = PythonStrategy().fix(content, indent_size=2, force=True)
     assert result.success is False
-    assert any("still has error" in e or "cannot auto-fix" in e.lower() for e in result.errors), (
-        f"Expected still-invalid error, got: {result.errors}"
-    )
+    assert any(
+        "still has error" in e or "cannot auto-fix" in e.lower() for e in result.errors
+    ), f"Expected still-invalid error, got: {result.errors}"
 
 
 # ---------------------------------------------------------------------------

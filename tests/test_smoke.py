@@ -4,7 +4,6 @@ These are the first tests to run. If they fail, nothing else matters.
 """
 
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -58,7 +57,7 @@ def test_import_imodent():
             __import__(mod_name)
         except Exception as e:
             errors.append(f"{mod_name}: {e}")
-    assert not errors, f"Import failures:\n" + "\n".join(errors)
+    assert not errors, "Import failures:\n" + "\n".join(errors)
 
 
 def test_ruff_check_imodent():

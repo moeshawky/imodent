@@ -51,9 +51,7 @@ def test_pipeline_fix_auto_detect(sample_py_content):
 def test_pipeline_fix_none_strategy():
     """FixPipeline.fix() with strategy=None on unknown content returns FixResult(success=False)."""
     pipeline = FixPipeline()
-    result = pipeline.fix(
-        "unidentifiable content 12345", strategy=None
-    )
+    result = pipeline.fix("unidentifiable content 12345", strategy=None)
     assert result.success is False
     assert any("Unable to detect" in e for e in result.errors)
 
@@ -68,8 +66,7 @@ def test_pipeline_indent_passed_to_strategy():
     # 4-space indent should NOT be present
     if "\n" in result.content.strip():
         indent_lines = [
-            line for line in result.content.splitlines()
-            if line.startswith("    ")
+            line for line in result.content.splitlines() if line.startswith("    ")
         ]
         assert len(indent_lines) == 0, (
             "JSON should not have 4-space indent when indent_size=2"

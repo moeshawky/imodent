@@ -4,11 +4,7 @@ These are static analysis tests that scan the source code for security
 anti-patterns. They are NOT testing runtime behavior.
 """
 
-import subprocess
 from pathlib import Path
-
-import pytest
-
 
 # Regex patterns that would be dangerous outside of specific safe contexts
 _SAFE_EVAL_PATTERNS = [
@@ -50,24 +46,25 @@ def test_no_eval_exec_in_source():
                 continue
 
             # Check for eval()
-            if "eval(" in stripped:
-                # Check if it's a known-safe pattern
-                if not any(safe in stripped for safe in _SAFE_EVAL_PATTERNS):
-                    violations.append(
-                        f"{py_file.relative_to(py_file.parents[2])}:{lineno}: "
-                        f"eval() usage: {stripped.strip()[:80]}"
-                    )
+            if "eval(" in stripped and not any(
+                safe in stripped for safe in _SAFE_EVAL_PATTERNS
+            ):
+                violations.append(
+                    f"{py_file.relative_to(py_file.parents[2])}:{lineno}: "
+                    f"eval() usage: {stripped.strip()[:80]}"
+                )
 
             # Check for exec()
-            if "exec(" in stripped:
-                if not any(safe in stripped for safe in _SAFE_EXEC_PATTERNS):
-                    violations.append(
-                        f"{py_file.relative_to(py_file.parents[2])}:{lineno}: "
-                        f"exec() usage: {stripped.strip()[:80]}"
-                    )
+            if "exec(" in stripped and not any(
+                safe in stripped for safe in _SAFE_EXEC_PATTERNS
+            ):
+                violations.append(
+                    f"{py_file.relative_to(py_file.parents[2])}:{lineno}: "
+                    f"exec() usage: {stripped.strip()[:80]}"
+                )
 
-    assert len(violations) == 0, (
-        f"Dangerous eval/exec patterns found:\n" + "\n".join(violations)
+    assert len(violations) == 0, "Dangerous eval/exec patterns found:\n" + "\n".join(
+        violations
     )
 
 
@@ -102,6 +99,6 @@ def test_subprocess_shell_false():
                     f"shell=1 usage: {stripped.strip()[:120]}"
                 )
 
-    assert len(violations) == 0, (
-        f"Dangerous shell=True patterns found:\n" + "\n".join(violations)
+    assert len(violations) == 0, "Dangerous shell=True patterns found:\n" + "\n".join(
+        violations
     )

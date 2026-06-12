@@ -1,18 +1,13 @@
 """Tests for project-level configuration loading."""
 
-from pathlib import Path
-
-import pytest
-
 from imodent.analysis.context import AnalysisConfig
 from imodent.project.config import (
     _coerce_bool,
     _coerce_str_list,
     load_config,
-    load_config_from_yaml,
     load_config_from_pyproject,
+    load_config_from_yaml,
 )
-
 
 # ---------------------------------------------------------------------------
 # Default config tests
@@ -96,7 +91,7 @@ def test_load_config_from_pyproject_valid(tmp_path):
     """load_config_from_pyproject reads [tool.imodent] from pyproject.toml."""
     pyproject_path = tmp_path / "pyproject.toml"
     pyproject_path.write_text(
-        '[tool.imodent]\ncheck_imports = false\ncheck_lint = false\n'
+        "[tool.imodent]\ncheck_imports = false\ncheck_lint = false\n"
     )
 
     data = load_config_from_pyproject(pyproject_path)
@@ -123,7 +118,7 @@ def test_load_config_yaml_precedence(tmp_path):
     yaml_path.write_text("check_imports: false\n")
 
     pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_text('[tool.imodent]\ncheck_imports = true\n')
+    pyproject_path.write_text("[tool.imodent]\ncheck_imports = true\n")
 
     config = load_config(tmp_path)
     # .imodent.yaml takes precedence — check_imports should be False
@@ -244,7 +239,9 @@ def test_load_config_pyproject_then_yaml(tmp_path):
     """load_config uses .imodent.yaml over pyproject.toml (yaml wins)."""
     # pyproject.toml (would be ignored if yaml exists)
     pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_text('[tool.imodent]\ncheck_imports = true\ncheck_lint = false\n')
+    pyproject_path.write_text(
+        "[tool.imodent]\ncheck_imports = true\ncheck_lint = false\n"
+    )
 
     # .imodent.yaml takes precedence
     yaml_path = tmp_path / ".imodent.yaml"
@@ -260,7 +257,7 @@ def test_load_config_pyproject_fallback(tmp_path):
     """load_config falls back to pyproject.toml when no .imodent.yaml exists."""
     pyproject_path = tmp_path / "pyproject.toml"
     pyproject_path.write_text(
-        '[tool.imodent]\ncheck_imports = false\ncheck_rust = true\n'
+        "[tool.imodent]\ncheck_imports = false\ncheck_rust = true\n"
     )
 
     config = load_config(tmp_path)

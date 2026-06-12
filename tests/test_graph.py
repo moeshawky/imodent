@@ -238,9 +238,7 @@ def test_build_dependency_graph_self_import_filtered(tmp_path):
 
     # The self-import should NOT appear (line 47: importee_module != importer_module)
     if "mod" in graph.imports:
-        assert "mod" not in graph.imports["mod"], (
-            "Self-import should be filtered out"
-        )
+        assert "mod" not in graph.imports["mod"], "Self-import should be filtered out"
 
 
 # ============================================================================
@@ -272,9 +270,10 @@ def test_build_dependency_graph_with_relative_imports(tmp_path):
         f"Expected pkg.mod to be registered, got: {graph.file_to_module}"
     )
     # sibling_py registers as pkg.sibling
-    assert "pkg.sibling" in graph.imported_by or "pkg.sibling" in graph.file_to_module.values(), (
-        f"Expected pkg.sibling in graph, got file_to_module: {graph.file_to_module}"
-    )
+    assert (
+        "pkg.sibling" in graph.imported_by
+        or "pkg.sibling" in graph.file_to_module.values()
+    ), f"Expected pkg.sibling in graph, got file_to_module: {graph.file_to_module}"
 
 
 def test_build_dependency_graph_with_aliased_imports(tmp_path):
@@ -297,9 +296,7 @@ def test_build_dependency_graph_with_aliased_imports(tmp_path):
 
     # a should import b (module resolved correctly despite alias "h")
     assert "a" in graph.imports, f"a not in imports: {list(graph.imports.keys())}"
-    assert "b" in graph.imports["a"], (
-        f"Expected a→b edge, got {graph.imports.get('a')}"
-    )
+    assert "b" in graph.imports["a"], f"Expected a→b edge, got {graph.imports.get('a')}"
     # b imported_by a
     assert "b" in graph.imported_by
     assert "a" in graph.imported_by["b"]
@@ -506,11 +503,11 @@ def test_extract_imports_complex_file():
 def test_extract_imports_preserves_line_numbers():
     """Each ImportInfo records the correct source line number."""
     source = (
-        "import os\n"          # line 1
-        "\n"                    # line 2
+        "import os\n"  # line 1
+        "\n"  # line 2
         "from sys import path\n"  # line 3
-        "\n"                    # line 4
-        "import json as js\n"   # line 5
+        "\n"  # line 4
+        "import json as js\n"  # line 5
     )
     file = Path("/fake/mod.py")
     imports = extract_imports(source, file)
@@ -538,16 +535,12 @@ def test_resolve_module_name_relative():
     project_root = Path("/project")
     file = project_root / "pkg" / "sub" / "deep.py"
     result = resolve_module_name(file, project_root)
-    assert result == "pkg.sub.deep", (
-        f"Expected pkg.sub.deep, got {result}"
-    )
+    assert result == "pkg.sub.deep", f"Expected pkg.sub.deep, got {result}"
 
     # Also test with __init__.py in nested path
     init_file = project_root / "pkg" / "sub" / "__init__.py"
     result2 = resolve_module_name(init_file, project_root)
-    assert result2 == "pkg.sub", (
-        f"Expected pkg.sub, got {result2}"
-    )
+    assert result2 == "pkg.sub", f"Expected pkg.sub, got {result2}"
 
 
 def test_resolve_module_name_with_alias(tmp_path):
@@ -717,9 +710,7 @@ def test_find_common_root():
     ]
     result = _find_common_root(paths)
     expected = Path("/project/pkg")
-    assert result == expected, (
-        f"Expected common root {expected}, got {result}"
-    )
+    assert result == expected, f"Expected common root {expected}, got {result}"
 
 
 def test_find_common_root_single_path():
@@ -747,20 +738,32 @@ def test_find_common_root_empty():
 def test_import_info_full_name():
     """ImportInfo.full_name returns module.name or module alone."""
     info1 = ImportInfo(
-        module="os", name=None, alias=None, line=1,
-        is_from_import=False, file=Path("/fake/mod.py"),
+        module="os",
+        name=None,
+        alias=None,
+        line=1,
+        is_from_import=False,
+        file=Path("/fake/mod.py"),
     )
     assert info1.full_name == "os"
 
     info2 = ImportInfo(
-        module="os", name="path", alias=None, line=1,
-        is_from_import=True, file=Path("/fake/mod.py"),
+        module="os",
+        name="path",
+        alias=None,
+        line=1,
+        is_from_import=True,
+        file=Path("/fake/mod.py"),
     )
     assert info2.full_name == "os.path"
 
     info3 = ImportInfo(
-        module="typing", name="Dict", alias="TypeDict", line=2,
-        is_from_import=True, file=Path("/fake/mod.py"),
+        module="typing",
+        name="Dict",
+        alias="TypeDict",
+        line=2,
+        is_from_import=True,
+        file=Path("/fake/mod.py"),
     )
     # Alias doesn't change full_name (it's module.name)
     assert info3.full_name == "typing.Dict"
@@ -780,8 +783,12 @@ def test_extract_imports_regex_with_as_alias():
 
     # Regular import with alias
     sys_imp = [i for i in imports if i.module == "sys"]
-    assert len(sys_imp) >= 1, f"Expected sys import, got {[(i.module, i.alias) for i in imports]}"
-    assert sys_imp[0].alias == "system", f"Expected alias='system', got {sys_imp[0].alias}"
+    assert len(sys_imp) >= 1, (
+        f"Expected sys import, got {[(i.module, i.alias) for i in imports]}"
+    )
+    assert sys_imp[0].alias == "system", (
+        f"Expected alias='system', got {sys_imp[0].alias}"
+    )
 
     # From-import with alias (via regex)
     json_imp = [i for i in imports if i.module == "json"]

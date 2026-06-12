@@ -6,12 +6,11 @@ from pathlib import Path
 from imodent.analysis.context import AnalysisConfig
 from imodent.analysis.coordinator import AnalysisCoordinator
 from imodent.pipeline import FixPipeline
-from imodent.strategies.python import PythonStrategy
-
 
 # ---------------------------------------------------------------------------
 # Fix pipeline integration
 # ---------------------------------------------------------------------------
+
 
 def test_full_fix_pipeline(sample_py_content):
     """End-to-end: FixPipeline.detect → fix → validate for Python produces valid output."""
@@ -40,6 +39,7 @@ def test_json_pipeline_integration(sample_json_content):
     result = pipeline.fix(sample_json_content)
     assert result.success is True
     import json
+
     parsed = json.loads(result.content)
     assert isinstance(parsed, dict)
 
@@ -52,6 +52,7 @@ def test_yaml_pipeline_integration(sample_yaml_content):
     result = pipeline.fix(sample_yaml_content)
     assert result.success is True
     import yaml
+
     parsed = yaml.safe_load(result.content)
     assert isinstance(parsed, dict)
 
@@ -59,6 +60,7 @@ def test_yaml_pipeline_integration(sample_yaml_content):
 # ---------------------------------------------------------------------------
 # Analysis coordinator integration
 # ---------------------------------------------------------------------------
+
 
 def test_analyze_coordinator_integration(tmp_path):
     """AnalysisCoordinator with real file produces coherent findings."""
@@ -94,9 +96,7 @@ def test_coordinator_cross_component(tmp_path):
         use_ruff=False,
     )
     coordinator = AnalysisCoordinator(config=config)
-    result = coordinator.analyze(
-        [tmp_path / "mod_a.py", tmp_path / "mod_b.py"]
-    )
+    result = coordinator.analyze([tmp_path / "mod_a.py", tmp_path / "mod_b.py"])
 
     # Decision candidates should be built
     assert hasattr(result, "candidates")
@@ -107,13 +107,20 @@ def test_coordinator_cross_component(tmp_path):
 # CLI end-to-end
 # ---------------------------------------------------------------------------
 
+
 def test_cli_end_to_end_analyze():
     """subprocess: `uv run imodent imodent/ --analyze --imports --lint --report` exits 0."""
     project_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
         [
-            "uv", "run", "imodent", "imodent/",
-            "--analyze", "--imports", "--lint", "--report",
+            "uv",
+            "run",
+            "imodent",
+            "imodent/",
+            "--analyze",
+            "--imports",
+            "--lint",
+            "--report",
         ],
         cwd=str(project_root),
         capture_output=True,

@@ -14,7 +14,6 @@ from imodent.analysis.context import FileInfo
 from imodent.analysis.decision_engine import DecisionEngine
 from imodent.analysis.findings import Finding, Location, Severity
 
-
 pytestmark = pytest.mark.slow
 
 

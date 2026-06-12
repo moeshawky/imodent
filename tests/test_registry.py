@@ -107,7 +107,9 @@ def test_registry_processor_registry():
         def detect(self, content: str) -> bool:
             return True
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             return FixResult(True, content, [], [], True, True)
 
         def validate(self, content: str) -> tuple[bool, str | None]:

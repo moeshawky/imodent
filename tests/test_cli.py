@@ -23,6 +23,7 @@ from imodent.cli import _collect_targets, fix_file, main
 # CLI entry point tests
 # ---------------------------------------------------------------------------
 
+
 def test_cli_no_args_shows_help(capsys):
     """main() with no args prints usage text.
 
@@ -174,6 +175,7 @@ def test_cli_fix_with_backup(temp_python_file):
 # ---------------------------------------------------------------------------
 # _collect_targets tests
 # ---------------------------------------------------------------------------
+
 
 def test_collect_targets_symlink_excluded(tmp_path):
     """_collect_targets returns [] for a symlink path."""
@@ -469,10 +471,10 @@ def test_analyze_with_rust_flag(tmp_path, capsys):
     """main() with --analyze --rust on a directory with .rs files detects Rust files."""
     rust_src = tmp_path / "src"
     rust_src.mkdir()
-    (rust_src / "main.rs").write_text("fn main() {\n    println!(\"hello\");\n}\n")
+    (rust_src / "main.rs").write_text('fn main() {\n    println!("hello");\n}\n')
     (rust_src / "lib.rs").write_text("pub fn add(a: i32, b: i32) -> i32 { a + b }\n")
     (tmp_path / "Cargo.toml").write_text(
-        "[package]\nname = \"test-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"
+        '[package]\nname = "test-crate"\nversion = "0.1.0"\nedition = "2021"\n'
     )
     (tmp_path / "pyproject.toml").write_text("[project]\nname='test'\n")
 
@@ -494,7 +496,7 @@ def test_analyze_with_cargo_flag(tmp_path, capsys):
     rust_src.mkdir()
     (rust_src / "main.rs").write_text("fn main() {}\n")
     (tmp_path / "Cargo.toml").write_text(
-        "[package]\nname = \"test-crate\"\nversion = \"0.1.0\"\n"
+        '[package]\nname = "test-crate"\nversion = "0.1.0"\n'
     )
     (tmp_path / "pyproject.toml").write_text("[project]\nname='test'\n")
 
@@ -516,9 +518,9 @@ def test_analyze_with_cargo_clippy(tmp_path, capsys):
     """main() with --analyze --cargo-clippy routes correctly (graceful if cargo not installed)."""
     rust_src = tmp_path / "src"
     rust_src.mkdir()
-    (rust_src / "main.rs").write_text("fn main() {\n    println!(\"clippy test\");\n}\n")
+    (rust_src / "main.rs").write_text('fn main() {\n    println!("clippy test");\n}\n')
     (tmp_path / "Cargo.toml").write_text(
-        "[package]\nname = \"test-crate\"\nversion = \"0.1.0\"\n"
+        '[package]\nname = "test-crate"\nversion = "0.1.0"\n'
     )
     (tmp_path / "pyproject.toml").write_text("[project]\nname='test'\n")
 
@@ -598,8 +600,15 @@ def test_help_output_contains_all_args(tmp_path, capsys):
 
         # Core SCAN-mode args
         scan_args = [
-            "--analyze", "--imports", "--lint", "--advisory", "--fix",
-            "--interactive", "--report", "--verbose", "--confidence",
+            "--analyze",
+            "--imports",
+            "--lint",
+            "--advisory",
+            "--fix",
+            "--interactive",
+            "--report",
+            "--verbose",
+            "--confidence",
         ]
         for arg in scan_args:
             assert arg in output, f"'{arg}' missing from --help"
@@ -929,9 +938,7 @@ def test_process_file_too_large(tmp_path, capsys, monkeypatch):
     fix_file(py_file)
     captured = capsys.readouterr()
     output = captured.out + captured.err
-    assert "file too large" in output, (
-        f"Expected 'file too large', got: {output}"
-    )
+    assert "file too large" in output, f"Expected 'file too large', got: {output}"
 
 
 def test_process_file_oserror_on_stat(tmp_path, capsys, monkeypatch):
@@ -1058,9 +1065,7 @@ def test_analyze_with_report_mode(tmp_path, capsys):
         main()
         captured = capsys.readouterr()
         output = captured.out + captured.err
-        assert "REVIEW MODE" in output, (
-            f"Expected REVIEW MODE banner, got: {output}"
-        )
+        assert "REVIEW MODE" in output, f"Expected REVIEW MODE banner, got: {output}"
     finally:
         sys.argv = old_argv
 
@@ -1116,9 +1121,9 @@ def test_scan_recursive_note(tmp_path, capsys):
         main()
         captured = capsys.readouterr()
         output = captured.out + captured.err
-        assert "always recursive" in output or "-r has no additional effect" in output, (
-            f"Expected recursive note, got: {output}"
-        )
+        assert (
+            "always recursive" in output or "-r has no additional effect" in output
+        ), f"Expected recursive note, got: {output}"
     finally:
         sys.argv = old_argv
 
@@ -1139,9 +1144,9 @@ def test_scan_force_note(tmp_path, capsys):
         main()
         captured = capsys.readouterr()
         output = captured.out + captured.err
-        assert "--force is a fix-mode flag only" in output or "fix-mode flag" in output, (
-            f"Expected force note, got: {output}"
-        )
+        assert (
+            "--force is a fix-mode flag only" in output or "fix-mode flag" in output
+        ), f"Expected force note, got: {output}"
     finally:
         sys.argv = old_argv
 
@@ -1157,10 +1162,12 @@ def test_confidence_no_candidates(tmp_path, capsys):
     cli.py:358-360 — when result.candidates is empty/None, a placeholder
     message is printed.
     """
+    from typing import ClassVar
+
     from imodent.cli import _display_confidence_output
 
     class FakeResult:
-        candidates = []
+        candidates: ClassVar[list] = []
 
     _display_confidence_output(FakeResult())
     captured = capsys.readouterr()
@@ -1209,9 +1216,9 @@ def test_analyze_with_cargo_check_flag(tmp_path, capsys):
     """
     rust_src = tmp_path / "src"
     rust_src.mkdir()
-    (rust_src / "main.rs").write_text("fn main() {\n    println!(\"hi\");\n}\n")
+    (rust_src / "main.rs").write_text('fn main() {\n    println!("hi");\n}\n')
     (tmp_path / "Cargo.toml").write_text(
-        "[package]\nname = \"test-crate\"\nversion = \"0.1.0\"\n"
+        '[package]\nname = "test-crate"\nversion = "0.1.0"\n'
     )
     (tmp_path / "pyproject.toml").write_text("[project]\nname='test'\n")
 
@@ -1250,7 +1257,9 @@ def test_version_fallback(monkeypatch, capsys):
         with pytest.raises(SystemExit) as exc_info:
             # Need to reload cli module to pick up the mocked version
             import importlib
+
             import imodent.cli
+
             importlib.reload(imodent.cli)
             imodent.cli.main()
         assert exc_info.value.code == 0
@@ -1260,7 +1269,9 @@ def test_version_fallback(monkeypatch, capsys):
         sys.argv = old_argv
         # Restore by re-importing
         import importlib
+
         import imodent.cli
+
         importlib.reload(imodent.cli)
 
 
@@ -1356,9 +1367,7 @@ def test_analyze_with_rust_and_cargo_flags(tmp_path, capsys):
     rust_src = tmp_path / "src"
     rust_src.mkdir()
     (rust_src / "main.rs").write_text("fn main() {}\n")
-    (tmp_path / "Cargo.toml").write_text(
-        "[package]\nname = \"tc2\"\nversion = \"0.1.0\"\n"
-    )
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "tc2"\nversion = "0.1.0"\n')
     (tmp_path / "pyproject.toml").write_text("[project]\nname='test'\n")
 
     old_argv = sys.argv[:]

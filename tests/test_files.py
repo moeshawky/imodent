@@ -6,10 +6,10 @@ from imodent.analysis.context import FileInfo
 from imodent.cli import _collect_targets
 from imodent.project.discovery import is_generated_artifact
 
-
 # ---------------------------------------------------------------------------
 # FileInfo tests
 # ---------------------------------------------------------------------------
+
 
 def test_fileinfo_from_path_python(tmp_path):
     """FileInfo.from_path on a .py file has language='python' and non-None AST."""
@@ -57,6 +57,7 @@ def test_fileinfo_from_path_with_encoding(tmp_path):
 # ---------------------------------------------------------------------------
 # _collect_targets tests
 # ---------------------------------------------------------------------------
+
 
 def test_collect_targets_symlink_excluded(tmp_path):
     """_collect_targets on a symlink returns [].
@@ -132,9 +133,12 @@ def test_collect_targets_directory_recursive(tmp_path):
 # is_generated_artifact tests
 # ---------------------------------------------------------------------------
 
+
 def test_is_generated_artifact_venv():
     """is_generated_artifact returns True for .venv paths."""
-    assert is_generated_artifact(Path(".venv/lib/python3.12/site-packages/pkg.py")) is True
+    assert (
+        is_generated_artifact(Path(".venv/lib/python3.12/site-packages/pkg.py")) is True
+    )
 
 
 def test_is_generated_artifact_pycache():

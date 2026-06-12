@@ -14,10 +14,10 @@ from imodent.analysis.evidence import Evidence
 from imodent.analysis.findings import Finding, Location, ProofState, Severity
 from imodent.registry import StrategyRegistry
 
-
 # ---------------------------------------------------------------------------
 # Content fixtures — valid strings
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_py_content() -> str:
@@ -46,6 +46,7 @@ def sample_yaml_content() -> str:
 # ---------------------------------------------------------------------------
 # Content fixtures — broken / malformed strings
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def malformed_py_content() -> str:
@@ -87,6 +88,7 @@ def binary_content() -> bytes:
 # Temporary file fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def temp_python_file(tmp_path: Path) -> Path:
     """Create a temporary .py file with valid Python content."""
@@ -122,15 +124,14 @@ def temp_project(tmp_path: Path) -> Path:
     src.mkdir(parents=True)
     (src / "main.py").write_text("import os\nimport sys\n\nprint('hello')\n")
     (src / "utils.py").write_text("def helper():\n    return 42\n")
-    (project_root / "pyproject.toml").write_text(
-        "[project]\nname = 'test-project'\n"
-    )
+    (project_root / "pyproject.toml").write_text("[project]\nname = 'test-project'\n")
     return project_root
 
 
 # ---------------------------------------------------------------------------
 # Registry isolation fixture
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def isolated_registry() -> None:
@@ -147,6 +148,7 @@ def isolated_registry() -> None:
 # ---------------------------------------------------------------------------
 # Finding / Evidence fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_finding_import() -> Finding:
@@ -235,6 +237,7 @@ def sample_analysis_context(tmp_path: Path) -> AnalysisContext:
 # CLI runner helper
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def cli_runner(capsys):
     """Return a callable that invokes main() with given argv and captures output.
@@ -255,12 +258,11 @@ def cli_runner(capsys):
 
         old_argv = sys.argv[:]
         try:
-            sys.argv = ["imodent"] + argv
+            sys.argv = ["imodent", *argv]
             main()
             return 0
         except SystemExit as e:
-            code = e.code if isinstance(e.code, int) else 1
-            return code
+            return e.code if isinstance(e.code, int) else 1
         finally:
             sys.argv = old_argv
 

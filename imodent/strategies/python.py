@@ -355,7 +355,9 @@ class PythonStrategy(LanguageStrategy):
                 open_pos = (
                     stripped.find("(")
                     if "(" in stripped
-                    else stripped.find("[") if "[" in stripped else stripped.find("{")
+                    else stripped.find("[")
+                    if "[" in stripped
+                    else stripped.find("{")
                 )
                 continuation_indent_stack.append(open_pos + 1)
 
