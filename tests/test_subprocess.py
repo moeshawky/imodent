@@ -9,8 +9,11 @@ and oracle integration.
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from imodent.analysis.context import AnalysisConfig, AnalysisContext, FileInfo
 from imodent.analysis.findings import Severity
@@ -1145,6 +1148,9 @@ def test_read_file_symlink(tmp_path):
     assert result is None
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="os.mkfifo not available on Windows"
+)
 def test_read_file_fifo(tmp_path):
     """_read_file on FIFO returns None."""
     fifo_path = tmp_path / "myfifo"

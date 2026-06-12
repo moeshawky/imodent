@@ -1,7 +1,10 @@
 """Integration tests — end-to-end pipelines across multiple components."""
 
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from imodent.analysis.context import AnalysisConfig
 from imodent.analysis.coordinator import AnalysisCoordinator
@@ -110,6 +113,8 @@ def test_coordinator_cross_component(tmp_path):
 
 def test_cli_end_to_end_analyze():
     """subprocess: `uv run imodent imodent/ --analyze --imports --lint --report` exits 0."""
+    if sys.platform == "win32":
+        pytest.skip("CLI integration tests use Unix paths and subprocess patterns")
     project_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
         [
@@ -136,6 +141,8 @@ def test_cli_end_to_end_analyze():
 
 def test_cli_fix_mode_end_to_end(temp_python_file):
     """subprocess: `uv run imodent <file>` exits 0 and modifies the file."""
+    if sys.platform == "win32":
+        pytest.skip("CLI integration tests use Unix paths and subprocess patterns")
     project_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
         ["uv", "run", "imodent", str(temp_python_file)],

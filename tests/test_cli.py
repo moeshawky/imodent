@@ -851,6 +851,9 @@ def test_scan_detection_no_analyze(tmp_path, capsys):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="os.mkfifo not available on Windows"
+)
 def test_collect_targets_not_regular_file(tmp_path, capsys):
     """_collect_targets prints diagnostic for a non-file, non-directory path.
 
