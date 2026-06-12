@@ -47,7 +47,7 @@
 
 1. **Q: Should advisors be interactive or report-only?**
    - **A:** Report-only initially (MVP), interactive as enhancement
-   
+
 2. **Q: How to handle multi-language projects?**
    - **A:** Language-specific analyzers implement `languages` property, unified Finding format
 
