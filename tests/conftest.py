@@ -276,6 +276,7 @@ def pytest_collection_modifyitems(config, items):
     skip_windows = pytest.mark.skip(reason="not applicable on Windows")
     skip_patterns = [
         "mkfifo",
+        "test_check_mypy_with_output",
         "test_subject_key_to_dict",
         "test_find_common_root",
         "test_find_common_root_single",
