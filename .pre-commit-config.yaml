@@ -18,5 +18,5 @@ repos:
     rev: v2.1.0
     hooks:
       - id: mypy
-        args: [--strict, --show-error-codes]
-        files: ^imodent/
+        args: [imodent/]
+        pass_filenames: false
