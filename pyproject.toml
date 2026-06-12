@@ -41,6 +41,9 @@ dependencies = [
 imodent = "imodent.cli:main"
 
 [project.optional-dependencies]
+refactor = [
+    "moedularizer>=0.1.1",
+]
 dev = [
     "coverage>=7.0",
     "pre-commit>=4.0",
@@ -49,6 +52,7 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.8",
     "mypy>=1.0",
+    "moedularizer>=0.1.1",
 ]
 
 [tool.setuptools.packages.find]

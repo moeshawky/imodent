@@ -59,8 +59,10 @@ class JSONLStrategy(LanguageStrategy):
                 continue
             try:
                 obj = json.loads(stripped)
-                # JSONL lines are compact
-                fixed_lines.append(json.dumps(obj, ensure_ascii=False))
+                # JSONL lines — apply requested indentation
+                fixed_lines.append(
+                    json.dumps(obj, indent=indent_size, ensure_ascii=False)
+                )
             except json.JSONDecodeError as e:
                 errors.append(f"Line {i}: {e}")
                 fixed_lines.append(stripped)  # keep original on error

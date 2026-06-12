@@ -230,29 +230,37 @@ class PythonStrategy(LanguageStrategy):
                 )
 
         # STAGE 1: Try black first (it handles complex formatting)
-        try:
-            import black
+        # Black always uses 4-space indentation.  When indent_size != 4 the
+        # strategy skips black and falls through to the AST-based reindent.
+        if indent_size == 4:
+            try:
+                import black
 
-            fixed = black.format_str(content, mode=black.Mode())
+                fixed = black.format_str(content, mode=black.Mode())
 
-            # Validate black's output
-            is_valid, error = self.validate(fixed)
-            if is_valid:
-                return FixResult(
-                    success=True,
-                    content=fixed,
-                    errors=errors,
-                    warnings=warnings,
-                    original_valid=original_valid,
-                    fixed_valid=True,
+                # Validate black's output
+                is_valid, error = self.validate(fixed)
+                if is_valid:
+                    return FixResult(
+                        success=True,
+                        content=fixed,
+                        errors=errors,
+                        warnings=warnings,
+                        original_valid=original_valid,
+                        fixed_valid=True,
+                    )
+                warnings.append(
+                    f"Black output invalid: {error}, falling back to internal logic"
                 )
+            except ImportError:
+                warnings.append("black not installed, using internal AST logic")
+            except Exception as e:
+                warnings.append(f"Black failed: {e}, falling back to internal logic")
+        else:
             warnings.append(
-                f"Black output invalid: {error}, falling back to internal logic"
+                f"Skipping black (indent_size={indent_size} != 4), "
+                "using AST-based reindent"
             )
-        except ImportError:
-            warnings.append("black not installed, using internal AST logic")
-        except Exception as e:
-            warnings.append(f"Black failed: {e}, falling back to internal logic")
 
         # STAGE 2: Fallback to our AST-based fixer
         try:

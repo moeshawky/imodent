@@ -288,7 +288,7 @@ wheels = [
 
 [[package]]
 name = "imodent"
-version = "1.0.0a2"
+version = "1.0.0a4"
 source = { editable = "." }
 dependencies = [
     { name = "black" },
@@ -302,12 +302,16 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "coverage" },
+    { name = "moedularizer" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
+]
+refactor = [
+    { name = "moedularizer" },
 ]
 
 [package.dev-dependencies]
@@ -320,6 +324,8 @@ requires-dist = [
     { name = "black", specifier = ">=23.0" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "json-repair", specifier = ">=0.20" },
+    { name = "moedularizer", marker = "extra == 'dev'", specifier = ">=0.1.1" },
+    { name = "moedularizer", marker = "extra == 'refactor'", specifier = ">=0.1.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
@@ -331,7 +337,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["refactor", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "types-pyyaml", specifier = ">=6.0.12.20260518" }]
@@ -437,6 +443,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/15/1f/dc6771a52592a4451be6effa200cbfc9cec61e4393d3033d81a9d307961d/librt-0.11.0-cp314-cp314t-win32.whl", hash = "sha256:2b481d846ac894c4e8403c5fd0e87c5d11d6499e404b474602508a224ff531c8", size = 103562, upload-time = "2026-05-10T18:17:03.99Z" },
     { url = "https://files.pythonhosted.org/packages/62/4a/7d1415567027286a75ba1093ec4aca11f073e0f559c530cf3e0a757ad55c/librt-0.11.0-cp314-cp314t-win_amd64.whl", hash = "sha256:28edb433edde181112a908c78907af28f964eabc15f4dd16c9d66c834302677c", size = 124327, upload-time = "2026-05-10T18:17:05.465Z" },
     { url = "https://files.pythonhosted.org/packages/ce/62/b40b382fa0c66fee1478073eb8db352a4a6beda4a1adccf1df911d8c289c/librt-0.11.0-cp314-cp314t-win_arm64.whl", hash = "sha256:dee008f20b542e3cd162ba338a7f9ec0f6d23d395f66fe8aeeec3c9d067ea253", size = 102572, upload-time = "2026-05-10T18:17:06.809Z" },
+]
+
+[[package]]
+name = "moedularizer"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/c4/7391a87afe854086b56e9ee9ec46d9f645d4d61d81a6175c77fe7014396b/moedularizer-0.1.1.tar.gz", hash = "sha256:43955ecdfbe3d656419de77fae8cf4d4ce1defe184bf4ff23dfa42441e34afc0", size = 119266, upload-time = "2026-06-12T17:57:07.786Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/d6/e7d00f73c0171433ffeb116004c698bb189847ce44c8849062eb4a11010e/moedularizer-0.1.1-py3-none-any.whl", hash = "sha256:79fbcff87c7a710b74f1f910862a2b072b1e4f05cec1b76dcf81bd13a5491753", size = 39455, upload-time = "2026-06-12T17:57:06.605Z" },
 ]
 
 [[package]]
