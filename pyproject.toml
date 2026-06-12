@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "imodent"
-version = "1.0.0a4"
+version = "1.0.0a5"
 description = "Code intelligence tool — fix, scan, and advise on Python, JSON, YAML, and Rust (advisory)"
 readme = "README.md"
 license = {text = "MIT"}
