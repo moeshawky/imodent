@@ -45,8 +45,8 @@ test.txt
 *.tmp
 *.log
 
-.codegraph/
-AGENTS.md
+# Moesniper backup artifacts
+.sniper/
 
 # Local agent/session artifacts
 .antigravitycli/
@@ -54,10 +54,14 @@ ses.txt
 prompt.md
 pr-pub-ses.md
 nexus.zip
+pi-session-*.html
 *_REPORT*.md
 COMPLETE_FINDINGS.md
 COMPOUNDED_BUG_PROTOCOL*.md
 ROOT_CAUSE_ANALYSIS.md
+
+.codegraph/
+AGENTS.md
 
 # AI annotation proposals (RNA layer — reviewed before applying as DNA)
 .annotations/
@@ -67,4 +71,3 @@ ROOT_CAUSE_ANALYSIS.md
 .ix/shard.ix
 .ix/beacon.json
 .ix/*.delta
-.codegraph/
