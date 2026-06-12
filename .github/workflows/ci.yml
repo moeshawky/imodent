@@ -97,7 +97,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type check
-        run: uv run mypy src/
+        run: uv run mypy imodent/
 
       - name: Test with coverage
         run: uv run pytest --cov --cov-report=xml
@@ -155,7 +155,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type check
-        run: uv run mypy src/
+        run: uv run mypy imodent/
 
       - name: Test
         run: uv run pytest --cov --cov-report=xml

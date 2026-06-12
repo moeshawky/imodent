@@ -32,7 +32,7 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
-          uv run mypy src/
+          uv run mypy imodent/
           uv run pytest --cov
 
       - name: Build package
