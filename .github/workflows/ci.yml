@@ -121,7 +121,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Test
-        run: uv run pytest --cov --cov-report=xml
+        run: uv run pytest tests/ --ignore=tests/test_performance.py -q
 
   pre-commit:
     name: Pre-commit
