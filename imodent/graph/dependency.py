@@ -21,7 +21,9 @@ def build_dependency_graph(
         Populated DependencyGraph
     """
     if project_root is None:
-        # Guess project root from file paths
+        # Guess project root from file paths.
+        # NOTE: Path.cwd() is a baseline fallback that gets refined by
+        # _find_common_root when files are available.
         project_root = _find_common_root(files.keys()) if files else Path.cwd()
 
     graph = DependencyGraph()
@@ -58,6 +60,8 @@ def _find_common_root(paths: list[Path]) -> Path:
     canonical implementation if either logic changes.
     """
     if not paths:
+        # NOTE: Path.cwd() fallback when no paths are available; this is
+        # a baseline that gets refined by callers with actual file paths.
         return Path.cwd()
 
     # Convert to absolute paths

@@ -115,7 +115,19 @@ def _run_type_checker(
     if tool == "mypy":
         return _parse_mypy_output(completed.stdout, completed.stderr)
     if tool == "pyright":
-        return _parse_pyright_output(completed.stdout)
+        findings = _parse_pyright_output(completed.stdout)
+        if completed.stderr.strip():
+            findings.append(
+                Finding.create(
+                    type="type_check_failure",
+                    severity=Severity.INFO,
+                    file=project_root,
+                    message=f"pyright stderr: {completed.stderr.strip()[:200]}",
+                    fixable=False,
+                    auto_fix_safe=False,
+                )
+            )
+        return findings
     return []
 
 

@@ -39,7 +39,7 @@ class ResidueAnalyzer(Analyzer):
         test stubs). Currently only checks lint plumbing.
         """
         findings: list[Finding] = []
-        self._lines_cache: dict[str, list[str]] = {}
+        self._lines_cache: dict[Path, list[str]] = {}
 
         if context.config.check_lint:
             lint_finding = self._find_declared_lint_without_executor(context)

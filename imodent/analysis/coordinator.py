@@ -99,6 +99,11 @@ class AnalysisCoordinator:
         """
         Run analysis on paths.
 
+        Tracks and reports file-load failures on stderr (OSError,
+        UnicodeDecodeError) so callers can distinguish "file skipped"
+        from "file never attempted".  Prints a ``Files loaded: N,
+        failed to load: M`` summary when any file fails to load.
+
         Args:
             paths: Files/directories to analyze
             analyzers: Specific analyzers to run (None = all)
@@ -237,7 +242,14 @@ class AnalysisCoordinator:
         candidates: list[DecisionCandidate] | None = None,
     ) -> dict[Path, FixResult]:
         """
-        Fix findings.
+        Fix findings and print an aggregate summary on stderr.
+
+        Tracks four counters across the fix pass: files modified, files
+        unchanged, files missing context (no ``FileInfo`` available), and
+        findings without a fixer.  Prints ``Fix summary: N files modified,
+        M unchanged`` (plus missing-context and without-fixer counts when
+        non-zero) so callers can differentiate "no actionable fixes" from
+        "file silently skipped."
 
         Args:
             findings: Findings to fix

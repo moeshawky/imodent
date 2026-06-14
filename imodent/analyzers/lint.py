@@ -88,6 +88,8 @@ class LintAnalyzer(Analyzer):
         try:
             completed = subprocess.run(  # noqa: S603
                 command,
+                # NOTE: cwd falls back to None when project_root is not a Path;
+                # the subprocess inherits the current working directory.
                 cwd=str(project_root) if isinstance(project_root, Path) else None,
                 text=True,
                 capture_output=True,
@@ -250,6 +252,8 @@ class LintAnalyzer(Analyzer):
 
 
 def _first_file(context: AnalysisContext) -> Path:
+    # NOTE: Path.cwd() fallback when context has no files; preferred
+    # project root discovery is via project_context.py.
     return next(iter(context.files), Path.cwd())
 
 

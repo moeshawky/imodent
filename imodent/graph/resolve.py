@@ -81,6 +81,8 @@ def resolve_undefined_name(
         skipped because they cannot be imported from another module.
     """
     if project_root is None:
+        # NOTE: Path.cwd() fallback is last-resort when files dict is empty.
+        # Preferred project root discovery is via project_context.py.
         project_root = _common_ancestor(files.keys()) if files else Path.cwd()
 
     suggestions: list[ImportSuggestion] = []
