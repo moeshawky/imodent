@@ -1,5 +1,9 @@
 # imodent
 
+[![PyPI version](https://badge.fury.io/py/imodent.svg)](https://pypi.org/project/imodent/)
+[![CI](https://github.com/moeshawky/imodent/actions/workflows/ci.yml/badge.svg)](https://github.com/moeshawky/imodent/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Code intelligence tool — fix, scan, and advise on Python, JSON, JSONL, and YAML files.
 
 imodent is a fast first-look mapper and conservative fixer. It is useful for

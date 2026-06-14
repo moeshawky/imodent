@@ -8,17 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Native yapf-like line wrapping + blank line management in PythonStrategy (deferred to next release)
+- Aggregate fix-summary tracking: `coordinator.fix()` prints files modified, unchanged,
+  missing-context, and without-fixer counts. `coordinator.analyze()` reports load failures.
+- Error logging at silent failure paths in `fixers/imports.py` (3 sites)
+- pyright stderr now captured and reported as INFO findings in type analyzer
 
 ### Fixed
-- Hanging test: `test_coordinator_fix_interactive_mode` infinite loop when moedularizer absent
-- PythonStrategy: skip black when `indent_size != 4`, fall through to AST-based reindent
-- JSONLStrategy: pass `indent_size` through to `json.dumps` for per-line formatting
+- Mechanism deduplication: `_file_to_module` in resolve.py now delegates to
+  `resolve_module_name` in imports.py (C28). Cross-reference annotations on 3 sibling pairs.
+- Type boundary fix: `residue.py` annotation `dict[str,list[str]]` → `dict[Path,list[str]]` (C38)
 - 7 pre-existing test assertion failures (moedularizer mock, json-repair mock, indent assertions)
 
 ### Changed
-- Added `moedularizer>=0.1.1` as optional dependency (`[refactor]` extra)
-- Test suite: 631 tests, 91.91% coverage
+- Test suite: 676 tests across 18 files, 88.22% coverage (+61 gap-closure tests)
+- 9 RNA annotation YAMLs refreshed post-Maat healing; 2 DNA docstrings added to coordinator
+- WD-40 cleanup: stale audit artifacts removed
+- Bare-except sites debt-commented (4 locations in coordinator.py and cli.py)
+- CWD-dependent resolution paths annotated as last-resort in 5 files
 
 ## [1.0.0a4] - 2026-06-12
 

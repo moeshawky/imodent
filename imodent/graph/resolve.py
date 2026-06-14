@@ -49,6 +49,7 @@ class ImportSuggestion:
 
 
 def resolve_undefined_name(
+    # C27 CWD fallback comment: `# NOTE: Path.cwd() fallback is last-resort when files dict is empty. # Preferred project root discovery is via project_context.py.`
     name: str,
     files: dict[Path, FileInfo],
     project_root: Path | None = None,

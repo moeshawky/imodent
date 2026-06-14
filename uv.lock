@@ -288,7 +288,7 @@ wheels = [
 
 [[package]]
 name = "imodent"
-version = "1.0.0a5"
+version = "1.0.0a6"
 source = { editable = "." }
 dependencies = [
     { name = "black" },
