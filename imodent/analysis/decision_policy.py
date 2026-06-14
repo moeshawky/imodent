@@ -78,6 +78,14 @@ def _destructive_allowed(candidate: DecisionCandidate, group: list) -> bool:
             if has_import_info and not _has_suppression_markers(finding):
                 return True
 
+    # undefined_api (F821): permitted when backed by Ruff oracle evidence
+    # and confidence is high.  The fixer adds an import, which is not
+    # destructive — it extends the file.
+    if candidate.issue_type == "undefined_api":
+        for finding in group:
+            if getattr(finding, "lint_code", None) == "F821":
+                return True
+
     return False
 
 

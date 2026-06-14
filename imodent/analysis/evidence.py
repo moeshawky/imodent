@@ -1,3 +1,23 @@
+# Monotonically increasing unique identifier, assigned by _next_evidence_id().
+# Global counter seeded at 1 — IDs increment across the entire process lifetime.
+# Used for audit trails and evidence deduplication.
+# Optional SubjectKey linking this evidence to a specific code subject
+# (e.g., a particular import binding). Used by DecisionEngine to fuse
+# evidence from multiple analyzers about the same subject.
+# Not included in JSON serialization (SubjectKey is a dataclass, not JSON-serializable).
+# Human-readable assertion about what this evidence proves.
+# Displayed in reports and decision summaries.
+# Example: 'import os is unused' or 'no clippy.toml found'.
+# Weight of this evidence in decision fusion, range 0.0 to 1.0.
+# 0.0 = negligible, 0.5 = neutral (default), 1.0 = conclusive.
+# DecisionEngine multiplies strength into confidence scoring.
+# Directional weight of this evidence toward a conclusion.
+# "context" = neutral background fact (default).
+# "for" = supports a proposed action or conclusion.
+# "against" = counters a proposed action or conclusion.
+# Category tag for this evidence record.
+# Examples: "ruff_diagnostic", "import_binding", "lint_finding", "cargo_diagnostic", "clippy_lint".
+# Used by DecisionEngine to filter and weight evidence by source type.
 """Evidence records used to derive analysis findings.
 
 Evidence is intentionally lower-level than a finding. An analyzer can emit

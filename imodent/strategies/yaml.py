@@ -17,10 +17,25 @@ class YAMLStrategy(LanguageStrategy):
 
     @property
     def name(self) -> str:
+        """
+        Two-stage fixing: ruamel.yaml → PyYAML fallback.
+        STAGE 1: ruamel.yaml.YAML().load() → StringIO.dump() — preserves comments and quotes.
+        Validates output with yaml.safe_load() before returning.
+        STAGE 2: PyYAML yaml.safe_load() → IndentDumper.dump() — custom dumper fixes
+        list indentation (pyyaml defaults to flow style for nested sequences).
+        Hacked via monkey-patching IndentDumper.increase_indent.
+        Empty/null YAML content returns original content as success (no modification needed).
+        """
         return "yaml"
 
     @property
     def extensions(self) -> list[str]:
+        """
+        Discriminates YAML from JSON. Content starting with { or [ is JSON-first:
+        try json.loads() → if valid JSON, reject (not YAML). If json.loads fails,
+        check for YAML signals: --- (doc start), bare key:value, &anchor/*alias.
+        Content with --- prefix or ^key: pattern (anchored to line start) is YAML.
+        """
         return [".yaml", ".yml"]
 
     def detect(self, content: str) -> bool:
@@ -137,6 +152,13 @@ class YAMLStrategy(LanguageStrategy):
 
             # Custom dumper that indents lists properly
             class IndentDumper(yaml.Dumper):
+                """
+                PyYAML Dumper subclass with monkey-patched increase_indent.
+                The patch forces indentless=False on all calls, which prevents PyYAML
+                from collapsing nested lists into flow style (it would otherwise use
+                indentless=True for the first level of indentation after a list).
+                This is a known PyYAML behavior issue; the hack is the standard workaround.
+                """
                 pass
 
             def increase_indent(self, flow=False, indentless=False):

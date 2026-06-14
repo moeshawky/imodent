@@ -1,5 +1,6 @@
 """Tests for graph module — import extraction, module name resolution, and dependency graph building."""
 
+import ast
 from pathlib import Path
 
 from imodent.analysis.context import DependencyGraph, FileInfo
@@ -10,6 +11,15 @@ from imodent.graph.dependency import (
     trace_symbol_usage,
 )
 from imodent.graph.imports import ImportInfo, extract_imports
+from imodent.graph.resolve import (
+    ImportSuggestion,
+    _assigns_name,
+    _common_ancestor,
+    _file_to_module,
+    _format_import,
+    _is_stdlib_module,
+    resolve_undefined_name,
+)
 
 # ---------------------------------------------------------------------------
 # extract_imports tests
@@ -850,3 +860,511 @@ def test_resolve_import_via_filesystem(tmp_path):
         f"Expected a→pkg.util edge via filesystem resolution, "
         f"got imports: {graph.imports}"
     )
+
+
+# ============================================================================
+# resolve.py — _is_stdlib_module
+# ============================================================================
+
+
+def test_is_stdlib_module_known_stdlib():
+    """_is_stdlib_module returns True for known stdlib modules."""
+    assert _is_stdlib_module("os") is True
+    assert _is_stdlib_module("sys") is True
+    assert _is_stdlib_module("json") is True
+    assert _is_stdlib_module("typing") is True
+    assert _is_stdlib_module("collections") is True
+    assert _is_stdlib_module("pathlib") is True
+
+
+def test_is_stdlib_module_non_stdlib():
+    """_is_stdlib_module returns False for third-party or project modules."""
+    assert _is_stdlib_module("imodent") is False
+    assert _is_stdlib_module("pytest") is False
+    assert _is_stdlib_module("numpy") is False
+    assert _is_stdlib_module("flask") is False
+
+
+def test_is_stdlib_module_edge_cases():
+    """_is_stdlib_module handles empty string and case sensitivity."""
+    assert _is_stdlib_module("") is False
+    # The allowlist is lowercase; 'OS' should not match 'os'
+    assert _is_stdlib_module("OS") is False
+
+
+# ============================================================================
+# resolve.py — _file_to_module
+# ============================================================================
+
+
+def test_file_to_module_simple():
+    """_file_to_module converts a Python file path to a dotted module name."""
+    assert _file_to_module(Path("/proj/pkg/mod.py"), Path("/proj")) == "pkg.mod"
+
+
+def test_file_to_module_init():
+    """_file_to_module strips __init__.py to yield the package name."""
+    assert _file_to_module(Path("/proj/pkg/__init__.py"), Path("/proj")) == "pkg"
+
+
+def test_file_to_module_top_level():
+    """_file_to_module handles top-level files correctly."""
+    assert _file_to_module(Path("/proj/main.py"), Path("/proj")) == "main"
+
+
+def test_file_to_module_outside_root():
+    """_file_to_module falls back to file stem when path is outside project root."""
+    assert _file_to_module(Path("/elsewhere/standalone.py"), Path("/proj")) == "standalone"
+
+
+def test_file_to_module_deeply_nested():
+    """_file_to_module handles deeply nested module paths."""
+    result = _file_to_module(
+        Path("/proj/pkg/sub/deep/module.py"), Path("/proj")
+    )
+    assert result == "pkg.sub.deep.module"
+
+
+def test_file_to_module_nested_init():
+    """_file_to_module strips nested __init__.py to yield the package."""
+    result = _file_to_module(Path("/proj/pkg/sub/__init__.py"), Path("/proj"))
+    assert result == "pkg.sub"
+
+
+# ============================================================================
+# resolve.py — _common_ancestor
+# ============================================================================
+
+
+def test_common_ancestor_shared_parent():
+    """_common_ancestor finds the deepest common parent directory of two paths."""
+    paths = [Path("/a/b/c.py"), Path("/a/b/d.py")]
+    assert _common_ancestor(paths) == Path("/a/b")
+
+
+def test_common_ancestor_no_shared_parent():
+    """_common_ancestor returns root when paths share no common ancestor."""
+    paths = [Path("/x/a.py"), Path("/y/b.py")]
+    assert _common_ancestor(paths) == Path("/")
+
+
+def test_common_ancestor_identical():
+    """_common_ancestor with identical paths returns the path itself."""
+    paths = [Path("/a/b/c.py"), Path("/a/b/c.py")]
+    assert _common_ancestor(paths) == Path("/a/b/c.py")
+
+
+def test_common_ancestor_empty():
+    """_common_ancestor returns cwd for empty path list."""
+    assert _common_ancestor([]) == Path.cwd()
+
+
+def test_common_ancestor_single():
+    """_common_ancestor with a single path returns that resolved path."""
+    paths = [Path("/a/b/c.py")]
+    assert _common_ancestor(paths) == Path("/a/b/c.py")
+
+
+def test_common_ancestor_three_paths():
+    """_common_ancestor handles three paths with varying common ancestry."""
+    paths = [Path("/a/b/c/d/e.py"), Path("/a/b/c/f.py"), Path("/a/b/g.py")]
+    assert _common_ancestor(paths) == Path("/a/b")
+
+
+def test_common_ancestor_same_directory():
+    """_common_ancestor when all files are in the same directory."""
+    paths = [Path("/a/b/c.py"), Path("/a/b/d.py"), Path("/a/b/e.py")]
+    assert _common_ancestor(paths) == Path("/a/b")
+
+
+# ============================================================================
+# resolve.py — _assigns_name
+# ============================================================================
+
+
+def test_assigns_name_simple_match():
+    """_assigns_name returns True when simple assignment target matches name."""
+    tree = ast.parse("x = 1")
+    assign_node = tree.body[0]
+    assert _assigns_name(assign_node, "x") is True
+
+
+def test_assigns_name_simple_no_match():
+    """_assigns_name returns False when simple assignment target does not match."""
+    tree = ast.parse("x = 1")
+    assign_node = tree.body[0]
+    assert _assigns_name(assign_node, "y") is False
+
+
+def test_assigns_name_tuple_match():
+    """_assigns_name detects name in tuple destructuring (x, y = 1, 2)."""
+    tree = ast.parse("x, y = 1, 2")
+    assign_node = tree.body[0]
+    assert _assigns_name(assign_node, "x") is True
+    assert _assigns_name(assign_node, "y") is True
+
+
+def test_assigns_name_tuple_no_match():
+    """_assigns_name returns False when tuple destructuring has no matching name."""
+    tree = ast.parse("x, y = 1, 2")
+    assign_node = tree.body[0]
+    assert _assigns_name(assign_node, "z") is False
+
+
+def test_assigns_name_multiple_targets():
+    """_assigns_name checks all targets in chained assignment (a = b = 1)."""
+    tree = ast.parse("a = b = 1")
+    assign_node = tree.body[0]
+    assert _assigns_name(assign_node, "a") is True
+    assert _assigns_name(assign_node, "b") is True
+    assert _assigns_name(assign_node, "c") is False
+
+
+# ============================================================================
+# resolve.py — _format_import
+# ============================================================================
+
+
+def test_format_import_from():
+    """_format_import produces 'from module import name' for standard from-import."""
+    assert _format_import("os.path", "join") == "from os.path import join"
+
+
+def test_format_import_bare():
+    """_format_import produces 'import module' when name matches module."""
+    assert _format_import("os", "os") == "import os"
+
+
+def test_format_import_bare_with_alias():
+    """_format_import adds 'as alias' for bare imports with alias."""
+    assert _format_import("os", "os", "operating_system") == "import os as operating_system"
+
+
+def test_format_import_from_with_alias():
+    """_format_import adds 'as alias' for from-imports with alias."""
+    result = _format_import("collections", "OrderedDict", "OD")
+    assert result == "from collections import OrderedDict as OD"
+
+
+def test_format_import_submodule_matching_top_package():
+    """_format_import when name matches top-level package of a submodule.
+
+    module='imodent.cli', name='imodent' → 'from imodent import cli'.
+    This avoids 'import imodent.cli' which would force attribute access.
+    """
+    assert _format_import("imodent.cli", "imodent") == "from imodent import cli"
+
+
+def test_format_import_submodule_name():
+    """_format_import produces correct from-import for submodule symbols."""
+    assert _format_import("imodent.cli", "main") == "from imodent.cli import main"
+
+
+def test_format_import_nested_submodule():
+    """_format_import handles deeply nested submodule imports."""
+    assert _format_import("imodent.analysis.context", "FileInfo") == (
+        "from imodent.analysis.context import FileInfo"
+    )
+
+
+# ============================================================================
+# resolve.py — ImportSuggestion dataclass
+# ============================================================================
+
+
+def test_import_suggestion_fields():
+    """ImportSuggestion dataclass stores all fields correctly."""
+    suggestion = ImportSuggestion(
+        name="helper",
+        module="pkg.util",
+        import_stmt="from pkg.util import helper",
+        definition_file=Path("/proj/pkg/util.py"),
+        definition_line=1,
+        is_stdlib=False,
+    )
+    assert suggestion.name == "helper"
+    assert suggestion.module == "pkg.util"
+    assert suggestion.import_stmt == "from pkg.util import helper"
+    assert suggestion.definition_file == Path("/proj/pkg/util.py")
+    assert suggestion.definition_line == 1
+    assert suggestion.is_stdlib is False
+
+
+def test_import_suggestion_default_is_stdlib():
+    """ImportSuggestion.is_stdlib defaults to False when not specified."""
+    suggestion = ImportSuggestion(
+        name="os",
+        module="os",
+        import_stmt="import os",
+        definition_file=Path("/proj/mod.py"),
+        definition_line=5,
+    )
+    assert suggestion.is_stdlib is False
+
+
+def test_import_suggestion_stdlib_flag():
+    """ImportSuggestion with is_stdlib=True identifies stdlib suggestions."""
+    suggestion = ImportSuggestion(
+        name="os",
+        module="os",
+        import_stmt="import os",
+        definition_file=Path("(stdlib)"),
+        definition_line=0,
+        is_stdlib=True,
+    )
+    assert suggestion.is_stdlib is True
+    assert suggestion.definition_file == Path("(stdlib)")
+    assert suggestion.definition_line == 0
+
+
+# ============================================================================
+# resolve.py — resolve_undefined_name integration tests
+# ============================================================================
+
+
+def test_resolve_undefined_name_finds_function(tmp_path):
+    """resolve_undefined_name finds a function defined in another project file."""
+    project_root = tmp_path / "project"
+    pkg = project_root / "pkg"
+    pkg.mkdir(parents=True)
+
+    # util.py defines helper() at module level
+    util_py = pkg / "util.py"
+    util_py.write_text("def helper():\n    return 42\n")
+
+    # main.py uses 'helper' but does NOT import it — it would be F821
+    main_py = project_root / "main.py"
+    main_py.write_text("print(helper())\n")
+
+    files: dict[Path, FileInfo] = {
+        main_py: FileInfo.from_path(main_py),
+        util_py: FileInfo.from_path(util_py),
+    }
+
+    suggestions = resolve_undefined_name("helper", files, project_root)
+
+    assert len(suggestions) == 1, (
+        f"Expected 1 suggestion for 'helper', got {len(suggestions)}: {suggestions}"
+    )
+    s = suggestions[0]
+    assert s.name == "helper"
+    assert s.module == "pkg.util"
+    assert s.import_stmt == "from pkg.util import helper"
+    assert s.definition_file.resolve() == util_py.resolve()
+    assert s.definition_line == 1
+    assert s.is_stdlib is False
+
+
+def test_resolve_undefined_name_finds_class(tmp_path):
+    """resolve_undefined_name finds a class defined in another project file."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    models_py = project_root / "models.py"
+    models_py.write_text("class User:\n    name: str\n")
+
+    main_py = project_root / "main.py"
+    main_py.write_text("u = User()\n")
+
+    files: dict[Path, FileInfo] = {
+        main_py: FileInfo.from_path(main_py),
+        models_py: FileInfo.from_path(models_py),
+    }
+
+    suggestions = resolve_undefined_name("User", files, project_root)
+    assert len(suggestions) == 1
+    assert suggestions[0].name == "User"
+    assert suggestions[0].module == "models"
+    assert suggestions[0].import_stmt == "from models import User"
+
+
+def test_resolve_undefined_name_finds_assignment(tmp_path):
+    """resolve_undefined_name finds a module-level variable assignment."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    config_py = project_root / "config.py"
+    config_py.write_text("DEBUG = True\nVERSION = '1.0'\n")
+
+    main_py = project_root / "main.py"
+    main_py.write_text("print(VERSION)\n")
+
+    files: dict[Path, FileInfo] = {
+        main_py: FileInfo.from_path(main_py),
+        config_py: FileInfo.from_path(config_py),
+    }
+
+    suggestions = resolve_undefined_name("VERSION", files, project_root)
+    assert len(suggestions) == 1
+    assert suggestions[0].name == "VERSION"
+    assert suggestions[0].module == "config"
+    assert suggestions[0].import_stmt == "from config import VERSION"
+
+
+def test_resolve_undefined_name_local_variable_not_found(tmp_path):
+    """resolve_undefined_name only checks module-level definitions, not locals.
+
+    A name defined as a local variable inside a function is not found
+    because resolve_undefined_name only walks tree.body (top-level nodes).
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    mod_py = project_root / "mod.py"
+    mod_py.write_text("def func():\n    x = 1\n    return x\n")
+
+    files = {mod_py: FileInfo.from_path(mod_py)}
+    suggestions = resolve_undefined_name("x", files, project_root)
+    assert suggestions == [], (
+        f"Local variable 'x' inside func() should not be found at module level, "
+        f"got: {suggestions}"
+    )
+
+
+def test_resolve_undefined_name_truly_undefined(tmp_path):
+    """resolve_undefined_name returns empty list when name is not defined anywhere."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    mod_py = project_root / "mod.py"
+    mod_py.write_text("print(42)\n")
+
+    files = {mod_py: FileInfo.from_path(mod_py)}
+    suggestions = resolve_undefined_name("nonexistent", files, project_root)
+    assert suggestions == [], (
+        f"'nonexistent' should not be found, got: {suggestions}"
+    )
+
+
+def test_resolve_undefined_name_stdlib_fallback(tmp_path):
+    """resolve_undefined_name suggests stdlib import when name is a known stdlib module.
+
+    When 'os' is not defined in any project file, but is_stdlib_module('os') is True,
+    resolve_undefined_name returns a stdlib ImportSuggestion.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    mod_py = project_root / "mod.py"
+    mod_py.write_text("print(os.getcwd())\n")
+
+    files = {mod_py: FileInfo.from_path(mod_py)}
+    suggestions = resolve_undefined_name("os", files, project_root)
+
+    assert len(suggestions) == 1, (
+        f"Expected stdlib fallback suggestion for 'os', got {len(suggestions)}"
+    )
+    s = suggestions[0]
+    assert s.name == "os"
+    assert s.module == "os"
+    assert s.import_stmt == "import os"
+    assert s.is_stdlib is True
+    assert s.definition_file == Path("(stdlib)")
+    assert s.definition_line == 0
+
+
+def test_resolve_undefined_name_multiple_matches(tmp_path):
+    """resolve_undefined_name returns all matches when name is defined in multiple files."""
+    project_root = tmp_path / "project"
+    pkg_a = project_root / "pkg_a"
+    pkg_b = project_root / "pkg_b"
+    pkg_a.mkdir(parents=True)
+    pkg_b.mkdir(parents=True)
+
+    a_py = pkg_a / "mod.py"
+    a_py.write_text("def helper():\n    return 1\n")
+
+    b_py = pkg_b / "mod.py"
+    b_py.write_text("def helper():\n    return 2\n")
+
+    main_py = project_root / "main.py"
+    main_py.write_text("print(helper())\n")
+
+    files: dict[Path, FileInfo] = {
+        main_py: FileInfo.from_path(main_py),
+        a_py: FileInfo.from_path(a_py),
+        b_py: FileInfo.from_path(b_py),
+    }
+
+    suggestions = resolve_undefined_name("helper", files, project_root)
+    assert len(suggestions) == 2, (
+        f"Expected 2 suggestions for 'helper', got {len(suggestions)}: {suggestions}"
+    )
+    modules = {s.module for s in suggestions}
+    assert "pkg_a.mod" in modules
+    assert "pkg_b.mod" in modules
+
+
+def test_resolve_undefined_name_skips_non_python(tmp_path):
+    """resolve_undefined_name skips files that are not Python or have no AST tree."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    py_file = project_root / "mod.py"
+    py_file.write_text("print(42)\n")
+
+    # Non-Python file with no AST
+    json_info = FileInfo(
+        path=project_root / "data.json",
+        content='{"helper": 1}',
+        language="json",
+        ast_tree=None,
+    )
+
+    files = {
+        py_file: FileInfo.from_path(py_file),
+        json_info.path: json_info,
+    }
+
+    suggestions = resolve_undefined_name("helper", files, project_root)
+    # 'helper' not in mod.py, and data.json is skipped (not Python)
+    assert suggestions == [], (
+        f"Non-Python files should be skipped, got: {suggestions}"
+    )
+
+
+def test_resolve_undefined_name_empty_files(tmp_path):
+    """resolve_undefined_name handles empty files dict gracefully."""
+    suggestions = resolve_undefined_name("anything", {}, Path("/fake"))
+    # Empty files → no matches → not stdlib → empty list
+    assert suggestions == []
+
+
+def test_resolve_undefined_name_project_root_default(tmp_path):
+    """resolve_undefined_name computes project_root from common ancestor when not given."""
+    project_root = tmp_path / "project"
+    pkg = project_root / "pkg"
+    pkg.mkdir(parents=True)
+
+    util_py = pkg / "util.py"
+    util_py.write_text("def helper():\n    return 42\n")
+
+    main_py = project_root / "main.py"
+    main_py.write_text("print(helper())\n")
+
+    files: dict[Path, FileInfo] = {
+        main_py: FileInfo.from_path(main_py),
+        util_py: FileInfo.from_path(util_py),
+    }
+
+    # project_root=None → computed from _common_ancestor(files.keys())
+    suggestions = resolve_undefined_name("helper", files, project_root=None)
+
+    assert len(suggestions) == 1
+    # With no explicit project_root, _file_to_module uses the common ancestor
+    # which should be the project directory or similar
+    assert suggestions[0].name == "helper"
+
+
+def test_resolve_undefined_name_functiondef_precedence(tmp_path):
+    """resolve_undefined_name finds FunctionDef definitions at module level."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    mod_py = project_root / "mod.py"
+    mod_py.write_text("def main():\n    pass\n")
+
+    files = {mod_py: FileInfo.from_path(mod_py)}
+    suggestions = resolve_undefined_name("main", files, project_root)
+    assert len(suggestions) == 1
+    assert suggestions[0].name == "main"

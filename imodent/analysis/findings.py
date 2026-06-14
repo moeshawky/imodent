@@ -1,4 +1,33 @@
-"""Core data types for analysis findings."""
+# Advisory urgency, lower number = higher priority.
+# Scale: 1 (critical) to 10 (informational).
+# Default 5 is neutral middle.
+# Category of content modification.
+# 'add' = new lines inserted at location.
+# 'remove' = lines deleted from source.
+# 'modify' = existing content replaced in-place.
+# Analysis has confirmed this code is safe to keep or has no issues.
+# Used when import-intent detection finds legitimate usage (re-export, typing, registration).
+# Opposite conclusion of PROVEN_UNUSED.
+# The bound name or import has been definitively proven unused.
+# Set by Ruff F401 diagnostics (strongest signal for unused imports).
+# Distinct from EXTERNALLY_VERIFIED — this is a specific lifecycle conclusion, not just confirmation.
+# Finding has been confirmed by an external tool (Ruff, Cargo, Clippy).
+# Higher confidence than RAW because a second system agrees.
+# Ex: Ruff F841 (unused variable) sets this; Ruff F401 sets PROVEN_UNUSED instead.
+# Initial state for findings before any external verification.
+# A finding created by analyzers/imports.py or analyzers/residue.py starts as RAW.
+# Ruff F401 findings skip RAW — they arrive as PROVEN_UNUSED.
+"""Core data types for analysis findings.
+
+Key types:
+- Finding: single issue with severity, location, proof state, evidence lifecycle,
+  and optional human-readable guidance for RAW findings.
+- Location: line/column span in a source file.
+- FixOption: possible user action (delete, keep, investigate, etc.).
+- Change: a single content modification (add, remove, modify).
+- Severity: ERROR > WARNING > INFO > HINT.
+- ProofState: lifecycle from RAW through EXTERNALLY_VERIFIED to ACCEPTED.
+"""
 
 import uuid
 from dataclasses import dataclass, field
@@ -46,7 +75,24 @@ class Location:
 
 @dataclass
 class Finding:
-    """A single issue or observation from analysis."""
+    """A single issue or observation from analysis.
+
+    Fields:
+        id: Auto-generated 8-char UUID.
+        type: Finding category (e.g. 'unused_import', 'import_intent',
+            'rust_diagnostic').
+        severity: ERROR, WARNING, INFO, or HINT.
+        file: Absolute path to the source file.
+        location: Optional line/column span.
+        message: Human-readable description.
+        fixable: Whether a fixer can address this finding.
+        auto_fix_safe: Whether auto-fix is safe without user confirmation.
+        data: Extensible metadata dict (evidence, import_info, etc.).
+        guidance: Human-readable next-step text for RAW proof-state findings.
+            Set by the coordinator's _attach_guidance() during analysis.
+            None for externally-verified or accepted findings.
+        proof_state: Evidence lifecycle state (RAW by default).
+    """
 
     id: str
     type: str
@@ -72,6 +118,9 @@ class Finding:
     proof_state: str | None = (
         None  # Defaults to RAW; Ruff F401→PROVEN_UNUSED, F841→EXTERNALLY_VERIFIED
     )
+
+    # Human-readable guidance for interpreting RAW findings
+    guidance: str | None = None
 
     @classmethod
     def create(

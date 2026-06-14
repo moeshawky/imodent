@@ -16,10 +16,22 @@ class JSONLStrategy(LanguageStrategy):
 
     @property
     def name(self) -> str:
+        """
+        Line-by-line parse-and-redump: each line is independently json.loads()ed
+        and json.dumps()ed (compact, no indent). Broken lines are preserved
+        as-is with error appended to errors list. Success = zero errors.
+        Does not use json-repair — each line is independently parsed.
+        """
         return "jsonl"
 
     @property
     def extensions(self) -> list[str]:
+        """
+        Detects JSONL content by checking if most non-empty lines start with { or [.
+        Threshold: ≥50% of non-empty lines must be jsonish.
+        Single line: must start with { or [ (ambiguous — JSONStrategy would also match,
+        but StrategyRegistry's detect() iterates strategies in registration order).
+        """
         return [".jsonl", ".ndjson"]
 
     def detect(self, content: str) -> bool:

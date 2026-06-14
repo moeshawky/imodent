@@ -1,11 +1,33 @@
+# # Registration imports: these modules register side-effect strategies/analyzers into global registries. Removing them breaks the registry. Also: StrategyRegistry, FixPipeline, ProjectContext, AnalysisCoordinator are actual runtime dependencies.
+# # Any scan-mode flag triggers the analysis path. --fix without --analyze
+# # implies scan mode (analysis is the prerequisite for fixing).
+# # FIX-only flags (-r, --force) are silently accepted but warn when
+# # combined with scan mode, since scan is always recursive and skips
+# # unparseable files instead of forcing.
 """CLI for imodent — code intelligence tool.
 
 Two modes:
 FIX — reformat and repair files in-place (default, backward-compatible)
 SCAN — multi-file analysis: imports, lint, architecture (--analyze)
+
+Scan-mode display features:
+- Severity-bucketed findings with color-coded output (ERROR=red, WARNING=yellow,
+  HINT=dim). Use --no-color to suppress ANSI codes.
+- In-bucket sorting: security (S-band) → correctness (F-band) → rest.
+- Compact confidence tags (e.g., [HIGH 0.90]) shown for every finding.
+- Contextual guidance for RAW proof-state findings explaining next steps.
+- --summary flag: aggregated file-level and rule-level view with per-file
+  rule breakdowns, replacing the per-finding listing.
+- --confidence flag: full decision candidate table with evidence counts,
+  destructive safety, and action suggestions.
+- --verbose shows proof_state, evidence kinds, and full confidence details.
 """
 
+# NOTE: This file exceeds the 500-line structural review threshold (977 lines).
+# Consider splitting into smaller modules when this module next undergoes major changes.
+
 import argparse
+import logging
 import shutil
 import sys
 from importlib.metadata import PackageNotFoundError
@@ -86,7 +108,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         pass
     try:
         content = file_path.read_text(encoding="utf-8")
-    except Exception as e:
+    except (OSError, UnicodeDecodeError) as e:
         print(f"✗ {file_path}: {e}")
         return
 
@@ -130,7 +152,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
             return
         try:
             shutil.copy2(file_path, bak)
-        except Exception as e:
+        except OSError as e:
             print(f"✗ {file_path}: could not create backup: {e}")
             return
         print(f" ↳ backup → {bak}")
@@ -140,7 +162,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         return
     try:
         file_path.write_text(result.content, encoding="utf-8")
-    except Exception as e:
+    except (OSError, UnicodeError) as e:
         print(f"✗ {file_path}: could not write file: {e}")
         return
     print(f"✓ {file_path}")
@@ -173,12 +195,19 @@ def analyze_files(
     check_only: bool = False,
     verbose: bool = False,
     confidence: bool = False,
+    summary: bool = False,
+    color: bool | None = None,
     check_rust: bool = False,
     run_cargo: bool = False,
     run_cargo_check: bool = False,
     run_cargo_clippy: bool = False,
+    show_graph: bool = False,
 ):
-    """Scan project for import issues, lint violations, architectural drift, Rust advisory."""
+    """Scan project for import issues, lint violations, architectural drift, Rust advisory.
+
+    If *show_graph* is True, prints the Mermaid dependency graph after
+    the findings summary.
+    """
     if not paths:
         print("No matching files found.")
         return
@@ -210,6 +239,15 @@ def analyze_files(
         print("No matching files found.")
         return
 
+    # Resolve color mode: explicit flag overrides TTY auto-detection
+    use_color = color if color is not None else sys.stdout.isatty()
+
+    # Build finding_id → confidence lookup from decision candidates
+    confidence_by_finding_id: dict[str, tuple[float, str]] = {}
+    for c in result.candidates:
+        for fid in c.finding_ids:
+            confidence_by_finding_id[fid] = (c.confidence, c.confidence_label)
+
     # ── Summary ──────────────────────────────────────────────────────────
     print(result.summary())
     print()
@@ -217,23 +255,52 @@ def analyze_files(
         print("✓ Clean — no issues detected.")
         return
 
+    # ── Aggregated summary view (--summary) ─────────────────────────────
+    if summary:
+        _display_summary_view(result, use_color, verbose,
+                              confidence_by_finding_id)
+        if not confidence:
+            return  # Don't show per-finding listing when --summary only
+
+    # ── Top Issues: 3 most critical findings ─────────────────────────────
+    _display_top_issues(result.findings, use_color)
+
     # ── Findings by severity ──────────────────────────────────────────────
     for severity in [Severity.ERROR, Severity.WARNING, Severity.INFO, Severity.HINT]:
         bucket = [f for f in result.findings if f.severity == severity]
         if not bucket:
             continue
+        # Sort within bucket: security (S-band) → correctness (F-band) → rest
+        bucket = _sort_findings_by_priority(bucket)
         label = severity.value.upper()
-        print(f"\n{label} ({len(bucket)}):")
+        color_fn = _severity_color(severity) if use_color else lambda x: x
+        header = f"\n{color_fn(label)} ({len(bucket)}):"
+        print(header)
         shown = bucket if verbose else bucket[:10]
         for f in shown:
             loc = f":{f.location.line}" if f.location else ""
-            print(f" {f.file.name}{loc}: {f.message}")
+            # Confidence tag
+            conf_tuple = confidence_by_finding_id.get(f.id)
+            conf_tag = _format_confidence_tag(conf_tuple)
+            # Security marker
+            sec_marker = _security_marker(f)
+            # Color the file:loc
+            file_loc = f"{f.file.name}{loc}"
+            if use_color:
+                file_loc = color_fn(file_loc)
+            msg = f" {file_loc}: {conf_tag}{sec_marker}{f.message}"
+            print(msg)
+            if f.guidance:
+                print(f"   → {f.guidance}")
             if verbose and f.proof_state:
                 print(f"   proof_state: {f.proof_state}")
                 evidence = f.data.get("evidence") or []
                 if evidence:
                     kinds = sorted({item.get("kind", "evidence") for item in evidence})
                     print(f"   evidence: {', '.join(kinds)}")
+                if conf_tuple:
+                    confidence, conf_label = conf_tuple
+                    print(f"   confidence: {confidence:.2f} ({conf_label})")
         if not verbose and len(bucket) > 10:
             print(f" … +{len(bucket) - 10} more")
 
@@ -257,6 +324,10 @@ def analyze_files(
                 if advice.example:
                     print(f"  Pattern:\n{advice.example}")
                 print(f"  Risk: {advice.impact}")
+
+    # ── Dependency graph ─────────────────────────────────────────────────
+    if show_graph:
+        _display_graph_output(result)
 
     # ── Determine fix mode ────────────────────────────────────────────────
     config = project_context.config
@@ -315,7 +386,7 @@ def analyze_files(
                         continue
                     try:
                         shutil.copy2(file_path, bak)
-                    except Exception as e:
+                    except OSError as e:
                         print(f" ✗ {file_path}")
                         print(f"  → could not create backup: {e}")
                         continue
@@ -326,7 +397,7 @@ def analyze_files(
                     continue
                 try:
                     file_path.write_text(fix_result.content, encoding="utf-8")
-                except Exception as e:
+                except (OSError, UnicodeError) as e:
                     print(f" ✗ {file_path}")
                     print(f"  → could not write file: {e}")
                     continue
@@ -338,8 +409,196 @@ def analyze_files(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# ANSI color codes for severity-based display
+# ---------------------------------------------------------------------------
+
+# ANSI escape sequences (only emitted when use_color is True)
+_ANSI_RED = "\033[91m"
+_ANSI_YELLOW = "\033[93m"
+_ANSI_DIM = "\033[2m"
+_ANSI_RESET = "\033[0m"
+
+
+def _severity_color(severity):
+    """Return a function that wraps text in the ANSI color for the severity.
+
+    Args:
+        severity: A Severity enum value.
+
+    Returns:
+        Callable ``str -> str`` that applies the color code (or identity if no match).
+    """
+    if severity == Severity.ERROR:
+        return lambda text: f"{_ANSI_RED}{text}{_ANSI_RESET}"
+    if severity == Severity.WARNING:
+        return lambda text: f"{_ANSI_YELLOW}{text}{_ANSI_RESET}"
+    if severity == Severity.HINT:
+        return lambda text: f"{_ANSI_DIM}{text}{_ANSI_RESET}"
+    return lambda text: text
+
+
+def _sort_findings_by_priority(findings: list) -> list:
+    """Sort findings within the same severity bucket by diagnostic priority.
+
+    Priority order:
+    1. Security-related: lint codes matching S3xx, S6xx patterns
+    2. Correctness issues: F-band lint codes (F401, F821, F841, F811)
+    3. Everything else: style, SIM, TRY, B, etc.
+
+    Args:
+        findings: List of Finding objects at the same severity level.
+
+    Returns:
+        New list sorted by priority (most critical first).
+    """
+    def _priority_key(f):
+        code = getattr(f, "lint_code", None) or ""
+        if code[:1] == "S" and code[1:2].isdigit():
+            # S-band: security (e.g., S310, S608)
+            return (0, code)
+        if code[:1] == "F" and code[1:2].isdigit():
+            # F-band: correctness (e.g., F401, F821)
+            return (1, code)
+        return (2, code)
+
+    return sorted(findings, key=_priority_key)
+
+
+def _security_marker(finding) -> str:
+    """Return '[SEC] ' if the finding has an S-band security lint code.
+
+    Args:
+        finding: A Finding object.
+
+    Returns:
+        ``'[SEC] '`` for S3xx/S6xx codes, empty string otherwise.
+    """
+    code = getattr(finding, "lint_code", None) or ""
+    if code and code[:1] == "S" and code[1:2].isdigit():
+        return "[SEC] "
+    return ""
+
+
+def _format_confidence_tag(conf_tuple: tuple | None) -> str:
+    """Format a compact confidence tag from a (score, label) tuple.
+
+    Args:
+        conf_tuple: ``(confidence: float, label: str)`` or None.
+
+    Returns:
+        String like ``'[HIGH 0.90] '``, ``'[LOW 0.30] '``, or empty.
+    """
+    if conf_tuple is None:
+        return ""
+    score, label = conf_tuple
+    return f"[{label.upper()} {score:.2f}] "
+
+
+def _display_summary_view(
+    result, use_color: bool, verbose: bool,
+    confidence_lookup: dict[str, tuple[float, str]],
+) -> None:
+    """Print file-level and rule-level aggregated view (--summary flag).
+
+    Shows:
+    - Top files by finding count with rule breakdown
+    - Top rules by finding count
+    - Per-file: rule breakdown with counts
+    """
+    from collections import defaultdict
+
+    by_file: dict[str, list] = defaultdict(list)
+    by_rule: dict[str, int] = defaultdict(int)
+
+    for f in result.findings:
+        fname = f.file.name
+        code = getattr(f, "lint_code", None) or f.type
+        by_file[fname].append((code, f))
+        by_rule[code] += 1
+
+    # ── Top files ───────────────────────────────────────────────────────
+    top_files = sorted(by_file.items(), key=lambda x: -len(x[1]))[:10]
+    print()
+    print("═══ Top files by finding count ═══")
+    for fname, items in top_files:
+        code_counts: dict[str, int] = defaultdict(int)
+        for code, _ in items:
+            code_counts[code] += 1
+        breakdown = ", ".join(
+            f"{code}({cnt})"
+            for code, cnt in sorted(code_counts.items(), key=lambda x: -x[1])
+        )
+        print(f"  {fname}: {len(items)} findings → {breakdown}")
+        if verbose:
+            for _code, finding in items:
+                loc = f":{finding.location.line}" if finding.location else ""
+                conf_tag = _format_confidence_tag(confidence_lookup.get(finding.id))
+                print(f"    {finding.file.name}{loc}: {conf_tag}{finding.message}")
+
+    # ── Top rules ────────────────────────────────────────────────────────
+    top_rules = sorted(by_rule.items(), key=lambda x: -x[1])[:10]
+    print()
+    print("═══ Top rules by finding count ═══")
+    for code, count in top_rules:
+        print(f"  {code}: {count}")
+
+    # ── Per-file rule breakdown ──────────────────────────────────────────
+    print()
+    print("═══ Per-file rule breakdown ═══")
+    for fname in sorted(by_file.keys()):
+        items = by_file[fname]
+        code_counts: dict[str, int] = defaultdict(int)
+        for code, _ in items:
+            code_counts[code] += 1
+        breakdown = ", ".join(
+            f"{code}({cnt})"
+            for code, cnt in sorted(code_counts.items(), key=lambda x: -x[1])
+        )
+        print(f"  {fname}: {len(items)} total — {breakdown}")
+
+
+def _display_top_issues(findings: list, use_color: bool) -> None:
+    """Print the 3 most critical findings as a 'Fix these first' summary.
+
+    Critical = ERROR severity OR WARNING with S-band security lint code.
+    Sorted by severity (ERROR first) then by priority.
+
+    Args:
+        findings: All findings from the analysis run.
+        use_color: Whether to emit ANSI color codes.
+    """
+    critical = [
+        f for f in findings
+        if f.severity in (Severity.ERROR, Severity.WARNING)
+        and (
+            f.severity == Severity.ERROR
+            or (getattr(f, "lint_code", None) or "").startswith("S")
+        )
+    ]
+    if not critical:
+        return
+
+    critical = sorted(critical, key=lambda f: (0 if f.severity == Severity.ERROR else 1, f.message))
+    top3 = critical[:3]
+
+    color_fn = _severity_color(Severity.ERROR) if use_color else lambda x: x
+    print(color_fn("┌─ Fix these first:"))
+    for f in top3:
+        loc = f":{f.location.line}" if f.location else ""
+        sec = _security_marker(f)
+        marker = "🔴" if f.severity == Severity.ERROR else "🟡"
+        print(color_fn(f"│ {marker} {f.file.name}{loc}: {sec}{f.message}"))
+    print(color_fn("└─"))
+
+
 def _display_confidence_output(result, verbose: bool = False) -> None:
-    """Print decision-grade output with evidence and confidence."""
+    """Print the full decision candidate table with evidence, confidence scores, and actions.
+
+    This is the verbose confidence view triggered by --confidence.
+    Lightweight confidence tags are shown in the default findings display;
+    this function shows the complete decision-grade output.
+    """
     candidates = getattr(result, "candidates", []) or []
     if not candidates:
         print("\nNo decision candidates available.")
@@ -393,6 +652,41 @@ def _display_confidence_output(result, verbose: bool = False) -> None:
                 print(
                     f"       - {ev.claim or ev.kind} ({ev.polarity}, {ev.strength:.2f})"
                 )
+
+
+def _display_graph_output(result) -> None:
+    """Print the dependency graph as a Mermaid flowchart.
+
+    Args:
+        result: An ``AnalysisResult`` whose ``context.graph`` provides the
+            dependency data.
+
+    The output is a ``flowchart LR`` Mermaid diagram ready for embedding
+    in Markdown or rendering with a Mermaid-compatible viewer.
+
+    If the graph has no import edges, prints a notice instead of an
+    empty diagram.
+    """
+    graph = result.context.graph
+    if not graph.imports:
+        print("\n" + "━" * 60)
+        print("DEPENDENCY GRAPH")
+        print("━" * 60)
+        print("  (no import relationships detected)")
+        return
+
+    print("\n" + "━" * 60)
+    print("DEPENDENCY GRAPH (Mermaid)")
+    print("━" * 60)
+    try:
+        mermaid = graph.to_mermaid()
+        print(mermaid)
+    # NOTE: broad except Exception here is technical debt — Mermaid diagram
+    # rendering is display-only; failures should not abort the entire tool.
+    # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
+    # Narrow to specific exception types when the failure surface is understood.
+    except Exception as exc:
+        print(f"  Error rendering graph: {exc}")
 
 
 DESCRIPTION = """\
@@ -493,36 +787,36 @@ def main():
         type=int,
         default=4,
         metavar="N",
-        help="spaces per indent level (default: 4)",
+        help="spaces per indent level (default: 4, FIX mode only)",
     )
     fix_group.add_argument(
         "-b",
         "--backup",
         action="store_true",
-        help="create .bak before writing",
+        help="create .bak before writing (both FIX and SCAN mode)",
     )
     fix_group.add_argument(
         "-n",
         "--dry-run",
         action="store_true",
-        help="preview output, don't write",
+        help="preview output, don't write (both FIX and SCAN mode)",
     )
     fix_group.add_argument(
         "-c",
         "--check",
         action="store_true",
-        help="validate syntax only, no changes",
+        help="validate syntax only in FIX mode; in SCAN mode prevents --fix from applying",
     )
     fix_group.add_argument(
         "-r",
         "--recursive",
         action="store_true",
-        help="walk subdirectories",
+        help="walk subdirectories (FIX mode only; SCAN is always recursive)",
     )
     fix_group.add_argument(
         "--force",
         action="store_true",
-        help="attempt fix on structurally broken code (skips pre-flight check)",
+        help="attempt fix on structurally broken code (FIX mode only)",
     )
 
     # ── SCAN mode flags ──────────────────────────────────────────────────
@@ -550,28 +844,45 @@ def main():
     scan_group.add_argument(
         "--fix",
         action="store_true",
-        help="auto-fix safe findings (combine with --analyze)",
+        help="auto-fix safe findings; implies --analyze (SCAN mode only)",
     )
     scan_group.add_argument(
         "--interactive",
         action="store_true",
-        help="prompt before each fix (not for batch mode)",
+        help="prompt before each fix, not for batch mode (SCAN mode only)",
     )
     scan_group.add_argument(
         "--report",
         action="store_true",
-        help="generate review report without modifying files",
+        help="generate review report without modifying files (SCAN mode only)",
     )
     scan_group.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="show all findings, not just top 10",
+        help="show all findings, not just top 10 (SCAN mode only)",
     )
     scan_group.add_argument(
         "--confidence",
         action="store_true",
-        help="show decision candidates with evidence and confidence scores",
+        help="show full decision candidate table with evidence and scores (SCAN mode only)",
+    )
+    scan_group.add_argument(
+        "--summary",
+        action="store_true",
+        help="show file-level and rule-level aggregation instead of per-finding listing (SCAN mode only)",
+    )
+    scan_group.add_argument(
+        "--color",
+        action="store_true",
+        default=None,
+        help="force color output (SCAN mode only)",
+    )
+    scan_group.add_argument(
+        "--no-color",
+        action="store_false",
+        dest="color",
+        help="disable color output even when stdout is a TTY (SCAN mode only)",
     )
     scan_group.add_argument(
         "--rust",
@@ -593,6 +904,11 @@ def main():
         action="store_true",
         help="run cargo clippy oracle only; implies --rust",
     )
+    scan_group.add_argument(
+        "--graph",
+        action="store_true",
+        help="render dependency graph as Mermaid flowchart (SCAN mode only)",
+    )
 
     args = parser.parse_args()
 
@@ -611,6 +927,7 @@ def main():
         or args.interactive
         or args.fix
         or args.confidence
+        or args.summary
         or args.rust
         or args.cargo
         or args.cargo_check
@@ -641,10 +958,13 @@ def main():
             check_only=args.check,
             verbose=args.verbose,
             confidence=args.confidence,
+            summary=args.summary,
+            color=args.color,
             check_rust=args.rust,
             run_cargo=args.cargo,
             run_cargo_check=args.cargo_check,
             run_cargo_clippy=args.cargo_clippy,
+            show_graph=args.graph,
         )
     elif not args.path:
         parser.print_usage()

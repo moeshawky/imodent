@@ -1,3 +1,7 @@
+# # __all__ collection: iterates list/tuple elements in __all__ = [...] assignments.
+# # Names appearing in __all__ are excluded from unused-import detection.
+# # This catches explicit package re-export patterns but misses dynamic __all__.
+# # Multiline import statement gate: `from X import (A, B, C)` cannot be line-removed. Refusal here prevents half-removed imports.
 """Import extraction from Python source files."""
 
 import ast

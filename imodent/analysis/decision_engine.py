@@ -44,6 +44,9 @@ def _issue_type_from_finding(finding) -> str:
     # Ruff F401 is an unused import, not generic lint
     if f_type == "lint" and getattr(finding, "lint_code", None) == "F401":
         return "unused_import"
+    # Ruff F821 is an undefined name — route to undefined_api
+    if f_type == "lint" and getattr(finding, "lint_code", None) == "F821":
+        return "undefined_api"
     # Clippy unused_imports is the Rust equivalent of F401
     if (
         f_type == "rust_diagnostic"

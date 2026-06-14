@@ -4,10 +4,12 @@ from imodent.analysis.context import AnalysisConfig
 from imodent.project.config import (
     _coerce_bool,
     _coerce_str_list,
+    _get_toml_loader,
     load_config,
     load_config_from_pyproject,
     load_config_from_yaml,
 )
+from unittest.mock import Mock, patch
 
 # ---------------------------------------------------------------------------
 # Default config tests
@@ -334,3 +336,72 @@ def test_coerce_bool_none():
     """_coerce_bool returns default for None."""
     assert _coerce_bool(None, "field", True) is True
     assert _coerce_bool(None, "field", False) is False
+
+
+# ---------------------------------------------------------------------------
+# _get_toml_loader tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_toml_loader_stdlib_tomllib():
+    """_get_toml_loader returns tomllib.load when stdlib tomllib is available."""
+    mock_mod = Mock()
+    mock_mod.load = "tomllib_load"
+
+    def _mock_import(name):
+        if name == "tomllib":
+            return mock_mod
+        raise ImportError(f"No module named '{name}'")
+
+    with patch("importlib.import_module", side_effect=_mock_import):
+        result = _get_toml_loader()
+
+    assert result == "tomllib_load"
+
+
+def test_get_toml_loader_fallback_tomli():
+    """_get_toml_loader falls back to tomli when tomllib is unavailable."""
+    mock_mod = Mock()
+    mock_mod.load = "tomli_load"
+    call_count = [0]
+
+    def _mock_import(name):
+        call_count[0] += 1
+        if name == "tomllib":
+            raise ImportError(f"No module named '{name}'")
+        # tomli (second call) succeeds
+        return mock_mod
+
+    with patch("importlib.import_module", side_effect=_mock_import):
+        result = _get_toml_loader()
+
+    assert result == "tomli_load"
+    # Should have tried tomllib first, then tomli
+    assert call_count[0] >= 2
+
+
+def test_get_toml_loader_fallback_toml():
+    """_get_toml_loader falls back to toml when both tomllib and tomli are unavailable."""
+    mock_mod = Mock()
+    mock_mod.load = "toml_load"
+
+    def _mock_import(name):
+        if name in ("tomllib", "tomli"):
+            raise ImportError(f"No module named '{name}'")
+        return mock_mod
+
+    with patch("importlib.import_module", side_effect=_mock_import):
+        result = _get_toml_loader()
+
+    assert result == "toml_load"
+
+
+def test_get_toml_loader_none_available():
+    """_get_toml_loader returns None when no TOML library is available."""
+    def _mock_import(name):
+        raise ImportError(f"No module named '{name}'")
+
+    with patch("importlib.import_module", side_effect=_mock_import):
+        result = _get_toml_loader()
+
+    assert result is None

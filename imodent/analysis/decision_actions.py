@@ -37,6 +37,14 @@ def _default_actions_for_issue_type(
     if issue_type == "undefined_api":
         return [
             ActionOption(
+                id="add_import",
+                label="Add missing import",
+                description="Resolve the undefined name and insert the required import statement",
+                destructive=False,
+                safe_auto=True,
+                requires_decision=False,
+            ),
+            ActionOption(
                 id="implement",
                 label="Implement or import",
                 description="Define the missing symbol or add the import",

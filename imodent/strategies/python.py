@@ -1,3 +1,7 @@
+# # Non-indentation syntax errors (e.g., `class F o:`, unclosed paren) cannot be fixed by a reindenter. Without --force, abort early to avoid 3 wasted fallback steps.
+# Maps AST node line numbers to their indentation level (0=module-level,
+# 1=first-level block, ...). Populated by visit_node() for every node
+# with a .lineno attribute.
 """
 Python Language Strategy.
 
@@ -135,6 +139,14 @@ class PythonStrategy(LanguageStrategy):
 
     @property
     def name(self) -> str:
+        """
+        Multi-strategy language detection:
+        1. Check first 5 non-empty lines for Python keywords (def, class, import, from, @, return, pass, etc.)
+        2. Regex match for assignment/function-call patterns
+        3. Full ast.parse() — most reliable but expensive
+        4. If ast.parse fails but keywords appear anywhere → still Python (badly indented)
+        Never calls strategy.validate() — detection is heuristic, validation is strict.
+        """
         return "python"
 
     @property

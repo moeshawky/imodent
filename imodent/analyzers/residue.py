@@ -39,6 +39,7 @@ class ResidueAnalyzer(Analyzer):
         test stubs). Currently only checks lint plumbing.
         """
         findings: list[Finding] = []
+        self._lines_cache: dict[str, list[str]] = {}
 
         if context.config.check_lint:
             lint_finding = self._find_declared_lint_without_executor(context)
@@ -109,23 +110,25 @@ class ResidueAnalyzer(Analyzer):
             data=evidence,
         )
 
-    @staticmethod
     def _find_text(
-        context: AnalysisContext, needle: str
+        self, context: AnalysisContext, needle: str
     ) -> tuple[Path, int, str] | None:
         for path, file_info in context.files.items():
-            for lineno, line in enumerate(file_info.content.splitlines(), 1):
+            if path not in self._lines_cache:
+                self._lines_cache[path] = file_info.content.splitlines()
+            for lineno, line in enumerate(self._lines_cache[path], 1):
                 if needle in line:
                     return path, lineno, line.strip()
         return None
 
-    @staticmethod
     def _find_regex(
-        context: AnalysisContext, pattern: str
+        self, context: AnalysisContext, pattern: str
     ) -> tuple[Path, int, str] | None:
         compiled = re.compile(pattern)
         for path, file_info in context.files.items():
-            for lineno, line in enumerate(file_info.content.splitlines(), 1):
+            if path not in self._lines_cache:
+                self._lines_cache[path] = file_info.content.splitlines()
+            for lineno, line in enumerate(self._lines_cache[path], 1):
                 if compiled.search(line):
                     return path, lineno, line.strip()
         return None

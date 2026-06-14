@@ -1,3 +1,6 @@
+# # Dual-index: _strategies maps name→class; _by_extension maps ".py"→class.
+# # Populated by register() which instantiates the class, reads name/extensions,
+# # and updates both indices. Used by get_by_extension() for filename-based lookup.
 """Registry for Language Strategies and Processors.
 
 Provides centralized registration and lookup for all available strategies

@@ -1,4 +1,21 @@
-"""Analysis coordinator - orchestrates all analyzers and fixers."""
+"""Analysis coordinator — orchestrates all analyzers, fixers, evidence, and guidance.
+
+The AnalysisCoordinator:
+1. Discovers files, builds dependency graph, creates AnalysisContext
+2. Runs configured analyzers (ImportAnalyzer, LintAnalyzer, ResidueAnalyzer,
+   RustAnalyzer) and collects findings
+3. Deduplicates findings (Ruff F401 evidence takes priority over local reports)
+4. Initializes proof states and attaches contextual human-readable guidance
+   for RAW findings
+5. Builds DecisionCandidates from findings + evidence via DecisionEngine
+6. Applies fixes via fixers when a fix mode is active
+
+AnalysisResult.summary() produces multi-dimensional aggregation:
+severity counts, top files, and top rules (lint codes or finding types).
+"""
+
+# NOTE: This file exceeds the 500-line structural review threshold (826 lines).
+# Consider splitting into smaller modules when this module next undergoes major changes.
 
 from __future__ import annotations
 
@@ -99,7 +116,7 @@ class AnalysisCoordinator:
         for path in files:
             try:
                 file_infos[path] = FileInfo.from_path(path)
-            except Exception as e:
+            except (OSError, UnicodeDecodeError) as e:
                 print(f"Warning: Could not load {path}: {e}", file=sys.stderr)
 
         # Build dependency graph (use project context root if available)
@@ -125,6 +142,10 @@ class AnalysisCoordinator:
             try:
                 findings = analyzer.analyze(context)
                 all_findings.extend(findings)
+            # NOTE: broad except Exception here is technical debt — warn-and-continue
+            # resilience for scan pipeline prevents single-analyzer failures from aborting.
+            # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
+            # Narrow to specific exception types when the failure surface is understood.
             except Exception as e:
                 print(f"Warning: Analyzer {analyzer.name} failed: {e}", file=sys.stderr)
 
@@ -152,6 +173,10 @@ class AnalysisCoordinator:
 
             try:
                 all_findings.extend(check_mypy(context))
+            # NOTE: broad except Exception here is technical debt — mypy subprocess
+            # failures should not abort the entire scan pipeline.
+            # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
+            # Narrow to specific exception types when the failure surface is understood.
             except Exception as e:
                 print(f"Warning: mypy check failed: {e}", file=sys.stderr)
 
@@ -160,17 +185,24 @@ class AnalysisCoordinator:
 
             try:
                 all_findings.extend(check_pyright(context))
+            # NOTE: broad except Exception here is technical debt — pyright subprocess
+            # failures should not abort the entire scan pipeline.
+            # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
+            # Narrow to specific exception types when the failure surface is understood.
             except Exception as e:
                 print(f"Warning: pyright check failed: {e}", file=sys.stderr)
 
         # Cross-project symbol usage evidence (gated by config.check_imports)
         if self.config.check_imports:
+            # NOTE: broad except Exception here is technical debt — cross-file
+            # evidence is internal code whose failure should not be hidden
             try:
                 _add_cross_file_evidence(all_findings, context)
             except Exception as e:
                 print(f"Warning: cross-file evidence failed: {e}", file=sys.stderr)
 
         self._initialize_proof_states(all_findings)
+        self._attach_guidance(all_findings)
         context.findings = all_findings
 
         # Build decision candidates from findings and evidence
@@ -263,6 +295,10 @@ class AnalysisCoordinator:
                         continue  # Skip
                     option = _destructive_option(fixer, routed_finding, context)
                     if not option:
+                        # Fall back to first safe option for
+                        # non-destructive fix types (e.g. add_import)
+                        option = _first_safe_option(fixer, routed_finding, context)
+                    if not option:
                         continue
 
                 elif mode == FixMode.ALL_AUTO:
@@ -273,6 +309,8 @@ class AnalysisCoordinator:
                     ):
                         continue
                     option = _destructive_option(fixer, routed_finding, context)
+                    if not option:
+                        option = _first_safe_option(fixer, routed_finding, context)
                     if not option:
                         continue
 
@@ -389,12 +427,27 @@ class AnalysisCoordinator:
         )
 
     def _find_project_root(self, paths: list[Path]) -> Path:
-        """Find project root from paths."""
+        """Find project root from paths.
+
+        NOTE: Duplicated logic exists at
+        :func:`imodent.project.project_context._find_project_root`
+        (C28 / Pair 4).  The module-level function in project_context
+        uses ``PROJECT_MARKERS`` which includes ``setup.cfg`` — this
+        method's inline marker list has been synchronised accordingly.
+        Consolidate into a single canonical implementation if either
+        version changes.
+        """
         if not paths:
             return Path.cwd()
 
         # Look for common project markers
-        markers = ["pyproject.toml", "setup.py", ".git", "requirements.txt"]
+        markers = [
+            "pyproject.toml",
+            "setup.py",
+            "setup.cfg",
+            ".git",
+            "requirements.txt",
+        ]
 
         for path in paths:
             if path.is_file():
@@ -448,6 +501,21 @@ class AnalysisCoordinator:
                 finding.proof_state = finding.data.get(
                     "proof_state", ProofState.RAW.value
                 )
+
+    @staticmethod
+    def _attach_guidance(findings: list[Finding]) -> None:
+        """Generate contextual human-readable guidance for RAW proof-state findings.
+
+        RAW findings have no external verification (no Ruff, no Cargo/Clippy).
+        Guidance explains what RAW means for the finding type and what the
+        user should do next to elevate the finding's proof state.
+        """
+        for finding in findings:
+            if finding.proof_state != ProofState.RAW.value:
+                continue
+            guidance = _generate_guidance(finding)
+            if guidance:
+                finding.guidance = guidance
 
     def _get_user_choice(
         self,
@@ -527,7 +595,7 @@ def _finding_with_issue_type(finding: Finding, issue_type: str) -> Finding:
     """Route lint-backed import findings through import fixers without mutating evidence."""
     if finding.type == issue_type:
         return finding
-    if issue_type in {"unused_import", "duplicate_import"}:
+    if issue_type in {"unused_import", "duplicate_import", "undefined_api"}:
         return replace(finding, type=issue_type, fixable=True)
     return finding
 
@@ -538,6 +606,24 @@ def _destructive_option(
     """Select the first destructive option after DecisionEngine safety approval."""
     for option in fixer.get_options(finding, context):
         if option.action == "delete" or not option.is_safe:
+            return option
+    return None
+
+
+def _first_safe_option(
+    fixer, finding: Finding, context: AnalysisContext
+) -> FixOption | None:
+    """Select the first safe (``is_safe=True``) option from a fixer.
+
+    Used as a fallback when no destructive option exists but a
+    safe automated action (like ``add_import``) is available.
+
+    Returns:
+        The first ``FixOption`` with ``is_safe=True``, or ``None``
+        if all options are unsafe or no options exist.
+    """
+    for option in fixer.get_options(finding, context):
+        if option.is_safe:
             return option
     return None
 
@@ -626,7 +712,75 @@ def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
     return deduplicated
 
 
+def _generate_guidance(finding: Finding) -> str | None:
+    """Map finding type and proof state to contextual human-readable guidance.
+
+    Produces one-line guidance strings explaining what the finding means and
+    what action the user should take next.  Only called for RAW findings —
+    externally-verified findings don't need interpretation help.
+    """
+    ftype = finding.type
+
+    # ── Import intent ────────────────────────────────────────────────────
+    if ftype == "import_intent":
+        return (
+            "This import may carry side-effect or re-export intent. "
+            "Verify by: (1) checking __all__, "
+            "(2) checking if module uses __getattr__, "
+            "(3) adding '# do not remove' if intentional."
+        )
+
+    # ── Unused imports ────────────────────────────────────────────────────
+    if ftype in ("unused_import", "unused_import_file"):
+        return "Run with --lint for Ruff external verification of unused imports."
+
+    # ── Rust advisory ─────────────────────────────────────────────────────
+    if ftype == "rust_broad_allow":
+        return (
+            "Broad allow attribute detected. "
+            "Consider scoping to specific lints instead of blanket suppression."
+        )
+    if ftype in ("rust_config_missing", "rust_config"):
+        return "Create clippy.toml or update [lints] in Cargo.toml to define lint policy."
+    if ftype in ("rust_oracle", "rust_oracle_unavailable"):
+        return (
+            "External Rust oracle unavailable. "
+            "Run with --cargo or --cargo-clippy for compiler-backed verification."
+        )
+    if ftype == "rust_diagnostic":
+        return (
+            "Rust compiler/clippy diagnostic. "
+            "Review the diagnostic message and fix in source. "
+            "imodent does not edit Rust files."
+        )
+    if ftype == "rust_residue":
+        return (
+            "Debug residue marker (todo!, unimplemented!, dbg!) found. "
+            "Review whether this marker should remain in production code."
+        )
+    # Generic RAW fallback for unknown types
+    return None
+
+
+def _rule_key(finding: Finding) -> str:
+    """Extract a stable rule identifier from a finding for aggregation.
+
+    Uses lint_code if available (e.g., 'F401', 'S310'), otherwise falls
+    back to the finding type. This ensures findings from the same diagnostic
+    rule are grouped together in summary displays.
+    """
+    code = getattr(finding, "lint_code", None)
+    if code:
+        return code
+    return finding.type
+
+
 class AnalysisResult:
+    # The else branch at line 231 catch-all for unknown FixMode checks pre-made
+    # decisions dict. This code path is unreachable because the four FixMode enum
+    # values (SAFE_AUTO, ALL_AUTO, INTERACTIVE, REPORT) are all handled by
+    # preceding elif branches. The code exists as a defensive pattern against
+    # future enum additions.
     """Result of an analysis run."""
 
     def __init__(
@@ -654,11 +808,27 @@ class AnalysisResult:
         return self.context.graph
 
     def summary(self) -> str:
-        """Generate summary of analysis."""
-        by_severity = {}
+        """Generate multi-dimensional analysis summary.
+
+        Returns a string with:
+        - Timing and file/finding counts
+        - Findings per severity
+        - Top files by finding count
+        - Top rules (lint codes or message prefixes) by frequency
+        """
+        by_severity: dict[str, int] = {}
+        by_file: dict[str, int] = {}
+        by_rule: dict[str, int] = {}
+
         for f in self.findings:
             sev = f.severity.value
             by_severity[sev] = by_severity.get(sev, 0) + 1
+
+            fname = f.file.name
+            by_file[fname] = by_file.get(fname, 0) + 1
+
+            rule = _rule_key(f)
+            by_rule[rule] = by_rule.get(rule, 0) + 1
 
         lines = [
             f"Analysis completed in {self.elapsed_time:.2f}s",
@@ -668,5 +838,19 @@ class AnalysisResult:
 
         for sev, count in sorted(by_severity.items()):
             lines.append(f"  {sev}: {count}")
+
+        # Top files (up to 5)
+        if by_file:
+            top_files = sorted(by_file.items(), key=lambda x: (-x[1], x[0]))[:5]
+            lines.append("Top files:")
+            for fname, count in top_files:
+                lines.append(f"  {fname}: {count}")
+
+        # Top rules (up to 5)
+        if by_rule:
+            top_rules = sorted(by_rule.items(), key=lambda x: (-x[1], x[0]))[:5]
+            lines.append("Top rules:")
+            for rule, count in top_rules:
+                lines.append(f"  {rule}: {count}")
 
         return "\n".join(lines)

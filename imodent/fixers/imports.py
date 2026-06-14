@@ -5,7 +5,11 @@ uses cross-file dependency analysis to suggest wiring paths for
 imports that carry usage intent but no local references.
 """
 
+# NOTE: This file exceeds the 500-line structural review threshold (769 lines).
+# Consider splitting into smaller modules when this module next undergoes major changes.
+
 import ast
+import logging
 
 from ..analysis.context import AnalysisContext
 from ..analysis.findings import Finding, FixOption
@@ -122,17 +126,30 @@ class ImportFixer(Fixer):
 
     @property
     def handles(self):
-        return {"unused_import", "unused_import_file", "duplicate_import"}
+        return {"unused_import", "unused_import_file", "duplicate_import",
+                "undefined_api"}
 
     def can_auto_fix(self, finding: Finding) -> bool:
-        """Check if finding can be safely auto-fixed."""
-        return finding.type == "duplicate_import"
+        """Check if finding can be safely auto-fixed.
+
+        Duplicate imports and F821 undefined names with a resolvable
+        import path are safe to auto-fix.
+        """
+        if finding.type == "duplicate_import":
+            return True
+        if finding.type == "undefined_api":
+            # Safe when the lint oracle has confirmed the undefined name
+            return finding.lint_code == "F821"
+        return False
 
     def get_options(
         self, finding: Finding, context: AnalysisContext
     ) -> list[FixOption]:
         """Get fix options for an import finding."""
         options = []
+
+        if finding.type == "undefined_api":
+            return self._get_undefined_api_options(finding, context)
 
         if finding.type == "duplicate_import":
             # For duplicates, only one real option
@@ -228,8 +245,15 @@ class ImportFixer(Fixer):
 
         return options
 
-    def apply_fix(self, finding: Finding, option: FixOption, content: str) -> FixResult:
-        """Apply the selected fix option."""
+    def apply_fix(self, finding: Finding, option: FixOption, content: str,
+                  context: AnalysisContext | None = None) -> FixResult:
+        """Apply the selected fix option.
+
+        The *context* parameter is optional and used only for
+        ``add_import`` actions that need project-wide name resolution.
+        """
+        if option.action == "add_import":
+            return self._add_import(finding, option, content, context)
         if option.action == "delete":
             return self._remove_import(finding, content)
         if option.action == "keep":
@@ -540,3 +564,225 @@ class ImportFixer(Fixer):
             original_valid=True,
             fixed_valid=True,
         )
+
+    # ── undefined_api (F821) support ─────────────────────────────────────
+
+    def _get_undefined_api_options(
+        self, finding: Finding, context: AnalysisContext
+    ) -> list[FixOption]:
+        """Build fix options for an F821 undefined-name finding.
+
+        Resolves the undefined name against the project's AST to find
+        importable definitions.  If a definition is found, offers an
+        ``add_import`` action with a preview of the import statement.
+        """
+        options: list[FixOption] = []
+        undefined_name = _extract_undefined_name(finding)
+        if not undefined_name:
+            return options
+
+        # Resolve the name against project files
+        suggestions = _resolve_import_for_finding(finding, context)
+        if suggestions:
+            best = suggestions[0]
+            options.append(
+                FixOption(
+                    id="add_import",
+                    label=f"Add import: {best.import_stmt}",
+                    description=(
+                        f"Insert '{best.import_stmt}' to resolve undefined "
+                        f"name '{undefined_name}'"
+                    ),
+                    action="add_import",
+                    is_safe=True,
+                    preview=best.import_stmt,
+                )
+            )
+
+        # Always offer manual implement / quarantine fallbacks
+        options.append(
+            FixOption(
+                id="implement",
+                label="Implement or import manually",
+                description="Define the missing symbol or add the import yourself",
+                action="keep",
+                is_safe=True,
+            )
+        )
+        options.append(
+            FixOption(
+                id="quarantine",
+                label="Quarantine",
+                description="Mark as known-hallucinated, exclude from validation",
+                action="keep",
+                is_safe=True,
+            )
+        )
+        return options
+
+    def _add_import(self, finding: Finding, option: FixOption,
+                    content: str, context: AnalysisContext | None = None
+                    ) -> FixResult:
+        """Insert a missing import statement into *content*.
+
+        Uses *option.preview* as the import statement if available,
+        otherwise resolves the undefined name against the project.
+        """
+        # Prefer the resolved import statement from option.preview
+        if option.preview:
+            import_stmt = option.preview
+        else:
+            undefined_name = _extract_undefined_name(finding)
+            if not undefined_name:
+                return FixResult(
+                    success=False, content=content,
+                    errors=["Cannot extract undefined name from F821 finding"],
+                    warnings=[], original_valid=True, fixed_valid=True,
+                )
+            suggestions = _resolve_import_for_finding(finding, context)
+            if not suggestions:
+                import_stmt = f"import {undefined_name}"
+            else:
+                import_stmt = suggestions[0].import_stmt
+
+        # Find insertion point: after the last import statement
+        insert_line = _find_import_insertion_point(content)
+        lines = content.splitlines()
+        # insert_line is 0-indexed position in the lines list
+        new_lines = (
+            [*lines[:insert_line], import_stmt, *lines[insert_line:]]
+        )
+        # Add blank line after the new import if the following line is
+        # not blank and not another import
+        if (insert_line < len(new_lines) - 1
+                and new_lines[insert_line + 1].strip()
+                and not new_lines[insert_line + 1].strip().startswith(
+                    ("import ", "from "))):
+            new_lines.insert(insert_line + 1, "")
+
+        new_content = "\n".join(new_lines)
+        if content.endswith("\n") and not new_content.endswith("\n"):
+            new_content += "\n"
+
+        # Validate the result parses
+        try:
+            ast.parse(new_content)
+        except SyntaxError as e:
+            return FixResult(
+                success=False, content=content,
+                errors=[f"Import insertion would break syntax: {e}"],
+                warnings=[], original_valid=True, fixed_valid=False,
+            )
+
+        return FixResult(
+            success=True, content=new_content,
+            errors=[], warnings=[f"Added import: {import_stmt}"],
+            original_valid=True, fixed_valid=True,
+        )
+
+
+# ── Module-level helpers for F821 resolution ───────────────────────────
+
+
+def _extract_undefined_name(finding: Finding) -> str | None:
+    """Extract the undefined name from an F821 finding's message.
+
+    Ruff F821 messages have the format ``"Undefined name `SomeName`"``.
+    Returns the first backtick-enclosed token, or None if no such
+    token is found.
+    """
+    message = finding.message or ""
+    parts = message.split("`")
+    if len(parts) >= 3:
+        return parts[1]
+    return None
+
+
+def _resolve_import_for_finding(
+    finding: Finding,
+    context: AnalysisContext | None,
+) -> list:
+    """Resolve an import path for an undefined-name finding.
+
+    Uses ``resolve_undefined_name()`` from ``graph/resolve.py``.
+    Returns a list of ``ImportSuggestion`` objects, or an empty list
+    on failure.
+    """
+    undefined_name = _extract_undefined_name(finding)
+    if not undefined_name:
+        logging.warning(
+            "Cannot resolve import for finding %s: "
+            "failed to extract undefined name",
+            finding.id,
+        )
+        return []
+    if context is None or not context.files:
+        logging.warning(
+            "Cannot resolve import for finding %s: "
+            "context is None or has no files",
+            finding.id,
+        )
+        return []
+
+    try:
+        from ..graph.resolve import resolve_undefined_name
+    except ImportError:
+        logging.warning(
+            "Cannot resolve import for finding %s: "
+            "failed to import resolve_undefined_name from graph.resolve",
+            finding.id,
+        )
+        return []
+
+    project_root = context.project_root
+    return resolve_undefined_name(undefined_name, context.files, project_root)
+
+
+def _find_import_insertion_point(content: str) -> int:
+    """Find the 0-indexed line position to insert a new import.
+
+    Scans *content* for ``import`` and ``from`` lines, along with
+    ``from __future__`` lines and module docstrings.  Returns the
+    index of the first line AFTER the last import statement, or 0
+    if the file has no imports.
+
+    A blank line is preserved after the last import (the insertion
+    point is placed after any trailing blank line that follows the
+    last import block).
+    """
+    lines = content.splitlines()
+    last_import_idx = -1
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Track import lines, future imports, and module docstrings
+        if stripped.startswith(("import ", "from ")):
+            last_import_idx = i
+        elif stripped.startswith('"""') or stripped.startswith("'''"):
+            # Module docstring — advance past it
+            last_import_idx = max(last_import_idx, i)
+        elif stripped.startswith("#"):
+            # Top-of-file comment — skip
+            continue
+        elif not stripped:
+            # Blank line within the import block — track if we've
+            # already seen imports (don't break early)
+            if last_import_idx >= 0:
+                continue
+        elif last_import_idx == -1 and i < 3:
+            # Lines near the top that aren't imports yet
+            continue
+        else:
+            # Non-import line after the import block — stop scanning
+            if last_import_idx >= 0:
+                break
+
+    # Insert after the last import line (or after a blank line that
+    # follows it), or at position 0 if no imports found
+    if last_import_idx >= 0:
+        # Skip any blank lines that follow the last import
+        insert_at = last_import_idx + 1
+        while (insert_at < len(lines)
+               and not lines[insert_at].strip()):
+            insert_at += 1
+        return insert_at
+    return 0

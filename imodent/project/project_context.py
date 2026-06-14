@@ -1,3 +1,53 @@
+# AnalysisConfig controlling which analyzers run and how findings are handled.
+# Loaded from .imodent.yaml / pyproject.toml by load_config() in config.py.
+# Defaults to an empty AnalysisConfig() with all defaults when no config file is found.
+# Accumulates all analysis findings (unused imports, lints, residue, Rust advisories).
+# Each analyzer appends via add_finding(); deduplication happens downstream in the coordinator.
+# Import dependency graph tracking module→imports and module→imported_by relationships.
+# Built by DependencyGraphBuilder in graph/dependency.py then attached here.
+# Maps file paths to their parsed FileInfo (content, language, AST tree).
+# Populated by the coordinator during file discovery.
+# Whether to use Pyright for type checking.
+# Defaults to False.  Pyright must be installed separately (npm or pip).
+# Whether to use Ruff for linting (preferred over Pyright).
+# Defaults to True.  Ruff must be available on PATH or in the virtual environment.
+# True when the user provided exclude_patterns in their config file.
+# When True, even explicitly passed file paths go through the exclude filter.
+# When False (default), explicit CLI file paths bypass exclude_patterns filtering.
+# Set by _apply_dict_to_config() in config.py when exclude_patterns key is present
+# in loaded config data.
+# Glob patterns for files/directories to skip during analysis.
+# Defaults include __pycache__, .pytest_cache, .ruff_cache, .mypy_cache,
+# .venv, venv, build, dist, *.egg-info, and target directories.
+# When exclude_patterns_from_config is False, these defaults are only
+# applied to directory scans — explicit file paths bypass them.
+# Glob patterns for files to include in analysis.
+# Defaults to ['*.py', '**/*.py'] — all Python files at any depth.
+# When Rust scanning is enabled, '.rs' patterns are appended at runtime.
+# Prompt the user before applying each fix.
+# Defaults to False — runs non-interactively by default.
+# Auto-apply all fixes regardless of confidence level.
+# Defaults to False — requires explicit opt-in due to potential false positives.
+# Auto-apply fixes with confidence >= 0.80 (high-confidence, non-destructive).
+# Defaults to True.
+# Whether to shell out to `cargo clippy` for higher-signal Rust diagnostics.
+# Only active when check_rust is True.  Defaults to False.
+# Clippy provides lint-specific diagnostics that cargo check does not.
+# Alias for run_cargo.  Mapped from 'run_cargo_check' config key.
+# If both run_cargo and run_cargo_check are set, they share the same behavior.
+# Whether to shell out to `cargo check` for Rust diagnostics verification.
+# Only active when check_rust is True.  Defaults to False.
+# Whether to run Rust advisory analysis (config scan, clippy.toml/rustomt.toml check,
+# broad allow detection).  Defaults to False — Rust support is opt-in.
+# Requires cargo/clippy available on PATH for full diagnostics.
+# Whether to run type checking via Pyright.
+# Defaults to False — Pyright is not bundled; must be installed separately.
+# Whether to run lint analysis via Ruff subprocess.
+# Defaults to True.
+# Whether to run syntax validation on source files via ast.parse().
+# Defaults to True.
+# Whether to run import analysis (unused, duplicate, intent-detected imports).
+# Defaults to True.
 """Project context — discovered project metadata for analysis."""
 
 from __future__ import annotations

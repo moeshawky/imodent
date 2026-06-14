@@ -636,6 +636,148 @@ def test_help_output_contains_all_args(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------
+# Help text mode annotation tests — verify (FIX mode only), (SCAN mode only),
+# and (both FIX and SCAN mode) annotations appear in --help output.
+# ---------------------------------------------------------------------------
+
+
+def _run_imodent_help() -> str:
+    """Run ``imodent --help`` in a subprocess and return stdout.
+
+    Uses the installed ``imodent`` entry-point binary so the test exercises
+    the real argparse output as users would see it (no sys.argv mocks).
+    """
+    import subprocess
+
+    imodent_bin = Path(sys.executable).parent / "imodent"
+    result = subprocess.run(
+        [str(imodent_bin), "--help"], capture_output=True, text=True
+    )
+    assert result.returncode == 0, f"imodent --help failed: {result.stderr}"
+    return result.stdout
+
+
+def _find_flag_lines(output: str, flag_raw: str) -> str:
+    """Return the flag's definition line(s) concatenated, including any
+    continuation line (argparse wraps long help text at ~80 columns).
+
+    Matches lines where *flag_raw* appears as a flag definition (followed
+    by 2+ spaces of alignment gap before the help description), not an
+    incidental mid-text mention (e.g. ``--fix`` inside ``--check``'s
+    ``prevents --fix from applying``).
+
+    If the next line is indented continuation (doesn't start with ``-``),
+    it is appended.
+    """
+    import re
+
+    # Match flag_raw followed by argparse's alignment gap (2+ spaces)
+    # before the help description.  This avoids false matches on
+    # continuation lines that mention another flag mid-sentence.
+    flag_pat = re.compile(re.escape(flag_raw) + r"\s{2,}")
+    lines = output.split("\n")
+    for i, line in enumerate(lines):
+        if not flag_pat.search(line):
+            continue
+        context = line
+        if i + 1 < len(lines):
+            next_stripped = lines[i + 1].strip()
+            if next_stripped and not next_stripped.startswith("-"):
+                context += " " + next_stripped
+        return context
+    return ""
+
+
+def test_help_fix_mode_only_flags():
+    """``imodent --help`` output contains FIX-mode-only annotations.
+
+    * --indent, --force  → ``(FIX mode only)``
+    * --recursive        → ``(FIX mode only; SCAN is always recursive)``
+      (annotation wraps across two lines in terminal output; both parts
+      are verified independently)
+    """
+    output = _run_imodent_help()
+
+    # --indent and --force both carry "(FIX mode only)"
+    assert "(FIX mode only)" in output, (
+        "Expected '(FIX mode only)' annotation in --help"
+    )
+
+    # --recursive has the longer annotation split across lines
+    # First line:  "...walk subdirectories (FIX mode only; SCAN is always"
+    # Second line: "                    recursive)"
+    assert "FIX mode only; SCAN is always" in output, (
+        "Expected recursive flag annotation 'FIX mode only; SCAN is always'"
+    )
+    # Verify --recursive appears and its continuation line is present
+    recursive_ctx = _find_flag_lines(output, "--recursive")
+    assert "recursive)" in recursive_ctx or "recursive)" in output, (
+        "Expected 'recursive)' as continuation of recursive flag annotation"
+    )
+
+
+def test_help_scan_mode_only_flags():
+    """``imodent --help`` output contains SCAN-mode-only annotations.
+
+    These nine flags are scan-mode-only and carry ``(SCAN mode only)``:
+    --fix, --interactive, --report, --verbose, --confidence, --summary,
+    --color, --no-color, --graph.
+    """
+    output = _run_imodent_help()
+
+    assert "(SCAN mode only)" in output, (
+        "Expected '(SCAN mode only)' annotation in --help"
+    )
+
+    # Verify each scan-mode-only flag is present and has the annotation
+    # somewhere in its context (including continuation lines for wrapping)
+    scan_only_flags = [
+        "--fix",
+        "--interactive",
+        "--report",
+        "--verbose",
+        "--confidence",
+        "--summary",
+        "--color",
+        "--no-color",
+        "--graph",
+    ]
+    for flag in scan_only_flags:
+        ctx = _find_flag_lines(output, flag)
+        assert "(SCAN mode only)" in ctx, (
+            f"Flag {flag} should have '(SCAN mode only)' in its help text"
+        )
+
+
+def test_help_dual_mode_flags():
+    """``imodent --help``: --backup, --dry-run, --check are NOT mode-only.
+
+    These three flags work in both FIX and SCAN mode, so their help text
+    must NOT contain ``(FIX mode only)`` or ``(SCAN mode only)``.
+    --backup and --dry-run carry ``(both FIX and SCAN mode)``; --check
+    describes both behaviours inline without a parenthetical annotation.
+    """
+    output = _run_imodent_help()
+
+    # The dual-mode annotation must appear (for --backup, --dry-run)
+    assert "(both FIX and SCAN mode)" in output, (
+        "Expected '(both FIX and SCAN mode)' annotation in --help"
+    )
+
+    dual_flags = ["--backup", "--dry-run", "--check"]
+    for flag in dual_flags:
+        ctx = _find_flag_lines(output, flag)
+        # ctx will be empty if no flag-definition line found (shouldn't happen)
+        assert ctx, f"Could not find flag definition for {flag} in --help output"
+        assert "(FIX mode only)" not in ctx, (
+            f"{flag} should not have '(FIX mode only)' — it works in both modes"
+        )
+        assert "(SCAN mode only)" not in ctx, (
+            f"{flag} should not have '(SCAN mode only)' — it works in both modes"
+        )
+
+
+# ---------------------------------------------------------------------------
 # _process_file error-handling tests (encoding, permission)
 # ---------------------------------------------------------------------------
 
@@ -1382,3 +1524,90 @@ def test_analyze_with_rust_and_cargo_flags(tmp_path, capsys):
         assert len(output) > 0, "Expected output from --analyze --rust --cargo"
     finally:
         sys.argv = old_argv
+
+
+# ---------------------------------------------------------------------------
+# MemoryError / SystemError propagation — narrowed exception handlers
+# ---------------------------------------------------------------------------
+# After narrowing 8 ``except Exception`` to specific types (OSError,
+# UnicodeDecodeError), MemoryError and SystemError MUST propagate — they
+# are not subclasses of the caught types and represent critical conditions
+# that should not be silently swallowed.
+
+
+def test_process_file_memory_error_propagates(tmp_path, monkeypatch):
+    """_process_file read_text except (OSError, UnicodeDecodeError) does NOT catch MemoryError.
+
+    The narrowed except clause at cli.py:107 catches only OSError
+    and UnicodeDecodeError.  MemoryError is a direct Exception subclass
+    (not a subtype of either), so it MUST propagate to the caller rather
+    than being silently swallowed by the generic handler.
+
+    Proof: MemoryError.__mro__ shows it inherits from Exception directly,
+    not from OSError or UnicodeError.
+    """
+    py_file = tmp_path / "mod.py"
+    py_file.write_text("x = 1\ny = 2\nprint(x + y)\n")
+
+    original_read_text = Path.read_text
+
+    def _mock_read_text(self, *args, **kwargs):
+        if self.resolve() == py_file.resolve():
+            raise MemoryError("simulated memory error on read")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _mock_read_text)
+
+    with pytest.raises(MemoryError, match="simulated memory error"):
+        fix_file(py_file)
+
+
+def test_process_file_system_error_propagates(tmp_path, monkeypatch):
+    """_process_file read_text except (OSError, UnicodeDecodeError) does NOT catch SystemError.
+
+    Same invariant as test_process_file_memory_error_propagates but
+    for SystemError — another direct Exception subclass that represents
+    a critical VM-level condition that must not be swallowed.
+    """
+    py_file = tmp_path / "mod.py"
+    py_file.write_text("x = 1\ny = 2\nprint(x + y)\n")
+
+    original_read_text = Path.read_text
+
+    def _mock_read_text(self, *args, **kwargs):
+        if self.resolve() == py_file.resolve():
+            raise SystemError("simulated system error on read")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _mock_read_text)
+
+    with pytest.raises(SystemError, match="simulated system error"):
+        fix_file(py_file)
+
+
+def test_fix_file_write_memory_error_propagates(tmp_path, monkeypatch):
+    """fix_file write_text except (OSError, UnicodeError) does NOT catch MemoryError.
+
+    The narrowed except clause at cli.py:161 catches only OSError
+    and UnicodeError.  MemoryError is not a subclass of either,
+    so a memory-allocation failure during the final write MUST
+    propagate up through fix_file().
+
+    backup=False is used to avoid exercising the backup copy path
+    (which has its own OSError handler at cli.py:151).
+    """
+    py_file = tmp_path / "mod.py"
+    py_file.write_text("x = 1\ny = 2\nprint(x + y)\n")
+    _py_file_str = str(py_file.resolve())
+
+    original_write_text = Path.write_text
+
+    def _mock_write_text(self, content, encoding=None):
+        if str(self) == _py_file_str:
+            raise MemoryError("simulated memory error on write")
+        return original_write_text(self, content, encoding=encoding)
+
+    monkeypatch.setattr(Path, "write_text", _mock_write_text)
+
+    with pytest.raises(MemoryError, match="simulated memory error"):
+        fix_file(py_file, backup=False)

@@ -17,10 +17,24 @@ class JSONStrategy(LanguageStrategy):
 
     @property
     def name(self) -> str:
+        """
+        Two-stage fixing: json-repair → standard json.
+        STAGE 1: json_repair.repair_json() — handles broken/trailing-comma JSON,
+        then validates by json.loads() + json.dumps(indent=N).
+        STAGE 2: json.loads() + json.dumps(indent=N) — only works on already-valid JSON.
+        On Stage 2 failure: returns FixResult with error suggesting `pip install json-repair`.
+        """
         return "json"
 
     @property
     def extensions(self) -> list[str]:
+        """
+        Detects JSON content by checking for opening { or [ character.
+        Discriminates against JSONL: if most non-empty lines start with { or [,
+        it's JSONL, not JSON (threshold: >1 jsonish line AND ≥50% of lines).
+        Broken JSON with missing braces still detected — detection is about
+        language identity, not syntactic validity.
+        """
         return [".json"]
 
     def detect(self, content: str) -> bool:

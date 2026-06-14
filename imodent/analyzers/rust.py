@@ -1,8 +1,12 @@
 """Rust advisory analyzer — fast config scan + optional Cargo/Clippy oracle."""
 
+# NOTE: This file exceeds the 500-line structural review threshold (825 lines).
+# Consider splitting into smaller modules when this module next undergoes major changes.
+
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -363,7 +367,8 @@ def _scan_cargo_root(
         content = _read_file(rs_path)
         if content is None:
             continue
-        for line_no, line in enumerate(content.splitlines(), 1):
+        lines = content.splitlines()
+        for line_no, line in enumerate(lines, 1):
             if _BROAD_ALLOW_RE.search(line):
                 findings.append(
                     Finding.create(
@@ -400,6 +405,7 @@ def _scan_cargo_root(
         content = _read_file(rs_path)
         if content is None:
             continue
+        lines = content.splitlines()
         # Skip test files and examples for residue markers — these are expected there
         rel = (
             str(rs_path.relative_to(root))
@@ -420,7 +426,7 @@ def _scan_cargo_root(
         # Also skip #[cfg(test)] modules — heuristic: file is under tests/ or name contains test
         in_test_context = is_test_or_example
 
-        for line_no, line in enumerate(content.splitlines(), 1):
+        for line_no, line in enumerate(lines, 1):
             stripped = line.strip()
             # Skip lines inside #[cfg(test)] blocks (heuristic: skip in test files)
             if in_test_context:
@@ -446,7 +452,6 @@ def _scan_cargo_root(
             if not in_test_context and _UNSAFE_NO_SAFETY_RE.search(stripped):
                 # Check if the NEXT non-empty line has a SAFETY comment
                 has_safety = False
-                lines = content.splitlines()
                 for future_idx in range(line_no, min(line_no + 3, len(lines))):
                     future_line = lines[future_idx].strip()
                     if future_line and _SAFETY_COMMENT_RE.search(future_line):
@@ -712,14 +717,54 @@ def _parse_cargo_json_output(
 
 
 def _read_file(path: Path) -> str | None:
+    """Best-effort UTF-8 file reader.
+
+    Returns file content, or None if the path is a symlink/fifo/socket,
+    exceeds 10 MB, or cannot be accessed due to I/O or encoding errors.
+
+    Log levels by failure mode:
+      - DEBUG: file-type skip (symlink, FIFO, socket, oversized)
+      - WARNING: file-type inspection failure (cannot lstat)
+      - WARNING: stat failure (cannot get metadata)
+      - WARNING: read failure (I/O error)
+      - WARNING: encoding error (UnicodeDecodeError)
+
+    Callers can distinguish intentional skips (DEBUG) from unexpected
+    failures (WARNING) via log level filtering.
+    """
     try:
-        if path.is_symlink() or path.is_fifo() or path.is_socket():
+        if path.is_symlink():
+            logging.debug("Skipping symlink: %s", path)
             return None
+        if path.is_fifo():
+            logging.debug("Skipping FIFO: %s", path)
+            return None
+        if path.is_socket():
+            logging.debug("Skipping socket: %s", path)
+            return None
+    except OSError as e:
+        logging.warning("Cannot inspect file type for %s: %s", path, e)
+        return None
+
+    # Guard against oversized files — stat the path first.
+    try:
         size = path.stat().st_size
-        if size > 10_000_000:
-            return None
+    except OSError as e:
+        logging.warning("Cannot stat %s: %s", path, e)
+        return None
+
+    if size > 10_000_000:
+        logging.debug("Skipping oversized file (%d bytes): %s", size, path)
+        return None
+
+    # Read the content.
+    try:
         return path.read_text(encoding="utf-8")
-    except Exception:
+    except UnicodeDecodeError as e:
+        logging.warning("Encoding error reading %s: %s", path, e)
+        return None
+    except OSError as e:
+        logging.warning("Cannot read %s: %s", path, e)
         return None
 
 

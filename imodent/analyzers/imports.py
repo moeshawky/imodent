@@ -1,3 +1,6 @@
+# # __all__ collection: iterates list/tuple elements in __all__ = [...] assignments.
+# # Names appearing in __all__ are excluded from unused-import detection.
+# # This catches explicit package re-export patterns but misses dynamic __all__.
 """Import analyzer with cognitive intent detection.
 
 Understands import intent to avoid false positives:
@@ -7,6 +10,9 @@ Understands import intent to avoid false positives:
 - CONDITIONAL: Function-level or try-block imports
 - SIDE_EFFECT: Imports that trigger module initialization
 """
+
+# NOTE: This file exceeds the 500-line structural review threshold (836 lines).
+# Consider splitting into smaller modules when this module next undergoes major changes.
 
 import ast
 import re
@@ -339,7 +345,13 @@ def _detect_import_intent(
 
 
 def _is_single_alias_import_statement(content: str, line: int) -> bool:
-    """Return True only when a line contains a one-alias import statement."""
+    """Return True only when a line contains a one-alias import statement.
+
+    NOTE: Sibling implementation ``_is_single_alias_source_line`` exists in
+    ``imodent.analyzers.lint`` (C28 / Pair 3).  That variant operates on a
+    single source line parsed in isolation rather than full-file content.
+    Different inputs, different reliability requirements — no code merge.
+    """
     try:
         tree = ast.parse(content)
     except SyntaxError:
@@ -378,6 +390,16 @@ class ImportAnalyzer(Analyzer):
 
     @property
     def languages(self):
+        """
+        Returns (intent:str, reason:str, is_safe_to_remove:bool). Intent categories:
+        side_effect (__future__, protection markers, registration modules), re_export
+        (__init__.py + project-local module), typing (annotation-use edge present),
+        try_block (inside try/except), registration (decorator pattern), usage (default).
+        NOTE: The is_safe_to_remove return value is DISCARDED by the caller in
+        analyze() at line 429 (_ = third element) but USED at line 582 in
+        _find_unused_in_file. Inconsistent pattern — two call sites handle the
+        third return value differently.
+        """
         return {"python"}
 
     @property

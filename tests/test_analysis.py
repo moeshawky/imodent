@@ -3,6 +3,8 @@ DecisionActions, DecisionConfidence, DecisionSubjects, DecisionPolicy."""
 
 from pathlib import Path
 
+import pytest
+
 from imodent.advisors.architecture import ArchitectureAdvisor
 from imodent.analysis.context import (
     AnalysisConfig,
@@ -2265,6 +2267,87 @@ def test_architecture_advisor_should_advise_many_unused():
 
 
 # ---------------------------------------------------------------------------
+# ArchitectureAdvisor — _find_cycles direct return-format tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_cycles_simple_cycle():
+    """A→B→A cycle returns single cycle path [module_a, module_b, module_a]."""
+    graph = DependencyGraph()
+    graph.add_import("module_a", "module_b")
+    graph.add_import("module_b", "module_a")
+
+    context = AnalysisContext(graph=graph)
+    advisor = ArchitectureAdvisor()
+    cycles = advisor._find_cycles(context)
+
+    assert isinstance(cycles, list), f"Expected list, got {type(cycles)}"
+    assert len(cycles) == 1, f"Expected exactly 1 cycle, got {cycles}"
+    # The DFS may start at either module_a or module_b depending on iteration
+    # order of graph.imports (dict insertion order → module_a first).
+    # Cycle should be ["module_a", "module_b", "module_a"] from module_a start.
+    cycle = cycles[0]
+    assert isinstance(cycle, list), f"Each cycle should be list, got {type(cycle)}"
+    assert len(cycle) == 3, f"Expected 3-node cycle, got {cycle}"
+    assert cycle[0] == cycle[-1], f"Cycle must close: {cycle}"
+    assert set(cycle) == {"module_a", "module_b"}, f"Cycle must contain both modules: {cycle}"
+
+
+def test_find_cycles_no_cycle():
+    """DAG with no cycles returns empty list."""
+    graph = DependencyGraph()
+    graph.add_import("module_a", "module_b")
+    graph.add_import("module_a", "module_c")
+    graph.add_import("module_b", "module_c")
+
+    context = AnalysisContext(graph=graph)
+    advisor = ArchitectureAdvisor()
+    cycles = advisor._find_cycles(context)
+
+    assert isinstance(cycles, list)
+    assert len(cycles) == 0, f"Expected no cycles in DAG, got {cycles}"
+
+
+def test_find_cycles_multiple_cycles():
+    """Two independent cycles both returned."""
+    graph = DependencyGraph()
+    # Cycle 1: a → b → a
+    graph.add_import("mod_a", "mod_b")
+    graph.add_import("mod_b", "mod_a")
+    # Cycle 2: x → y → z → x
+    graph.add_import("mod_x", "mod_y")
+    graph.add_import("mod_y", "mod_z")
+    graph.add_import("mod_z", "mod_x")
+
+    context = AnalysisContext(graph=graph)
+    advisor = ArchitectureAdvisor()
+    cycles = advisor._find_cycles(context)
+
+    assert isinstance(cycles, list)
+    assert len(cycles) == 2, f"Expected 2 independent cycles, got {len(cycles)}: {cycles}"
+    # Each cycle must close (first == last)
+    for cycle in cycles:
+        assert cycle[0] == cycle[-1], f"Cycle does not close: {cycle}"
+
+
+def test_find_cycles_self_cycle():
+    """Module importing itself → cycle [self, self]."""
+    graph = DependencyGraph()
+    graph.add_import("self_import", "self_import")
+
+    context = AnalysisContext(graph=graph)
+    advisor = ArchitectureAdvisor()
+    cycles = advisor._find_cycles(context)
+
+    assert isinstance(cycles, list)
+    assert len(cycles) == 1, f"Expected 1 self-cycle, got {cycles}"
+    cycle = cycles[0]
+    assert len(cycle) == 2, f"Self-cycle should be [self, self], got {cycle}"
+    assert cycle[0] == cycle[1] == "self_import", f"Self-cycle mismatch: {cycle}"
+    assert cycle[0] == cycle[-1], f"Self-cycle must close: {cycle}"
+
+
+# ---------------------------------------------------------------------------
 # build_dependency_graph tests
 # ---------------------------------------------------------------------------
 
@@ -2391,12 +2474,19 @@ def test_decision_actions_build_actions_unused_import():
 
 
 def test_decision_actions_build_actions_undefined_api():
-    """_default_actions_for_issue_type('undefined_api') returns implement/quarantine."""
+    """_default_actions_for_issue_type('undefined_api') returns add_import / implement / quarantine."""
     actions = _default_actions_for_issue_type("undefined_api")
-    assert len(actions) == 2
+    assert len(actions) == 3
     action_ids = {a.id for a in actions}
-    assert action_ids == {"implement", "quarantine"}
-    for a in actions:
+    assert action_ids == {"add_import", "implement", "quarantine"}
+    # add_import is safe-auto, non-destructive
+    add_import = next(a for a in actions if a.id == "add_import")
+    assert add_import.destructive is False
+    assert add_import.safe_auto is True
+    assert add_import.requires_decision is False
+    # implement and quarantine are manual
+    for aid in ("implement", "quarantine"):
+        a = next(x for x in actions if x.id == aid)
         assert a.destructive is False
         assert a.safe_auto is False
         assert a.requires_decision is True
@@ -4038,3 +4128,223 @@ def test_coordinator_analyze_skips_generated_artifacts():
         assert "ignored.py" not in names, (
             "Files inside .venv must be excluded from discovery"
         )
+
+# ============================================================================
+# DependencyGraph serialization tests — to_dict, to_mermaid, to_dot
+# ============================================================================
+
+
+def test_dependency_graph_to_dict():
+    """Build a small DependencyGraph, call to_dict(), verify structure."""
+    graph = DependencyGraph()
+
+    # Register modules with file mappings
+    graph.add_import("imodent.cli", "imodent.analysis.context")
+    graph.add_import("imodent.cli", "imodent.analysis.coordinator")
+    graph.add_import("imodent.analysis.coordinator", "imodent.analysis.context")
+    graph.module_to_file["imodent.cli"] = Path("/fake/imodent/cli.py")
+    graph.module_to_file["imodent.analysis.coordinator"] = Path(
+        "/fake/imodent/analysis/coordinator.py"
+    )
+    graph.module_to_file["imodent.analysis.context"] = Path(
+        "/fake/imodent/analysis/context.py"
+    )
+
+    result = graph.to_dict()
+
+    # Top-level keys
+    assert "modules" in result
+    assert "edges" in result
+    assert "node_count" in result
+    assert "edge_count" in result
+
+    # modules is list[str] — only importers (keys of self.imports)
+    assert isinstance(result["modules"], list)
+    assert "imodent.cli" in result["modules"]
+    assert "imodent.analysis.coordinator" in result["modules"]
+    assert result["node_count"] == len(result["modules"])
+    assert result["node_count"] == 2  # only importers; context is importee-only
+
+    # edges
+    assert isinstance(result["edges"], list)
+    assert result["edge_count"] == len(result["edges"])
+    assert result["edge_count"] == 3  # 3 distinct (from, to) pairs
+
+    for edge in result["edges"]:
+        assert "from" in edge
+        assert "to" in edge
+        assert "from_file" in edge
+        assert "to_file" in edge
+        assert edge["from_file"] is not None  # module_to_file registered
+        assert edge["to_file"] is not None
+
+    # Spot-check one edge
+    cli_to_context = [
+        e
+        for e in result["edges"]
+        if e["from"] == "imodent.cli" and e["to"] == "imodent.analysis.context"
+    ]
+    assert len(cli_to_context) == 1
+    assert cli_to_context[0]["from_file"] == "/fake/imodent/cli.py"
+    assert cli_to_context[0]["to_file"] == "/fake/imodent/analysis/context.py"
+
+
+def test_dependency_graph_to_dict_empty():
+    """to_dict() on empty graph returns zeroed-out dictionary."""
+    graph = DependencyGraph()
+    result = graph.to_dict()
+
+    assert result == {
+        "modules": [],
+        "edges": [],
+        "node_count": 0,
+        "edge_count": 0,
+    }
+
+
+def test_dependency_graph_to_mermaid():
+    """Build small graph, call to_mermaid(). Verify mermaid flowchart LR syntax."""
+    graph = DependencyGraph()
+    graph.add_import("mod_a", "mod_b")
+    graph.add_import("mod_b", "mod_c")
+
+    output = graph.to_mermaid()
+
+    lines = output.split("\n")
+    # Header
+    assert lines[0] == "flowchart LR"
+
+    # Node declarations (square-bracket syntax)
+    node_lines = [ln for ln in lines if "[" in ln and "]" in ln]
+    assert len(node_lines) == 3, f"Expected 3 node lines, got {node_lines}"
+    for mod_name in ("mod_a", "mod_b", "mod_c"):
+        node_syntax = f"{mod_name}[{mod_name}]"
+        assert any(node_syntax in ln for ln in node_lines), (
+            f"Missing node declaration for {mod_name}"
+        )
+
+    # Arrow edges
+    edge_lines = [ln for ln in lines if "-->" in ln]
+    assert len(edge_lines) == 2, f"Expected 2 edge lines, got {edge_lines}"
+    assert any("mod_a --> mod_b" in ln for ln in edge_lines)
+    assert any("mod_b --> mod_c" in ln for ln in edge_lines)
+
+
+def test_dependency_graph_to_mermaid_empty():
+    """Empty graph returns valid mermaid header with zero nodes."""
+    graph = DependencyGraph()
+    output = graph.to_mermaid()
+
+    lines = output.split("\n")
+    assert lines[0] == "flowchart LR"
+    # No node or edge content beyond header
+    assert len(lines) == 1
+
+
+def test_dependency_graph_to_dot():
+    """Build small graph, call to_dot(). Verify digraph DOT format."""
+    graph = DependencyGraph()
+    graph.add_import("mod_a", "mod_b")
+    graph.add_import("mod_b", "mod_c")
+
+    output = graph.to_dot()
+
+    lines = output.split("\n")
+    # Header
+    assert lines[0] == "digraph imodent_deps {"
+    assert 'rankdir="LR";' in output
+    assert 'node [shape=box, style=rounded];' in output
+
+    # Node declarations
+    node_lines = [ln for ln in lines if "[label=" in ln]
+    assert len(node_lines) == 3, f"Expected 3 node lines, got {node_lines}"
+    for mod_name in ("mod_a", "mod_b", "mod_c"):
+        node_syntax = f'{mod_name} [label="{mod_name}"];'
+        assert any(node_syntax in ln for ln in node_lines), (
+            f"Missing DOT node for {mod_name}"
+        )
+
+    # Edges
+    edge_lines = [ln for ln in lines if " -> " in ln]
+    assert len(edge_lines) == 2, f"Expected 2 edge lines, got {edge_lines}"
+    assert any("mod_a -> mod_b;" in ln for ln in edge_lines)
+    assert any("mod_b -> mod_c;" in ln for ln in edge_lines)
+
+    # Closing brace
+    assert output.rstrip().endswith("}")
+
+
+def test_dependency_graph_to_dot_empty():
+    """Empty graph returns valid digraph with zero nodes."""
+    graph = DependencyGraph()
+    output = graph.to_dot()
+
+    # Header present, no node declarations, closing brace
+    assert output.startswith("digraph imodent_deps {")
+    assert 'rankdir="LR";' in output
+    assert 'node [shape=box, style=rounded];' in output
+    assert output.rstrip().endswith("}")
+    # No node entries
+    assert "[label=" not in output
+    assert " -> " not in output
+
+# ============================================================================
+# MemoryError / SystemError propagation — coordinator narrowed handlers
+# ============================================================================
+# After narrowing ``except Exception`` to ``except (OSError, UnicodeDecodeError)``
+# at coordinator.py:116 (the FileInfo.from_path call in analyze()), MemoryError
+# and SystemError MUST propagate — they are not subclasses of the caught types
+# and represent critical conditions that should not be silently swallowed.
+
+
+def test_coordinator_analyze_memory_error_propagates(tmp_path, monkeypatch):
+    """AnalysisCoordinator.analyze() does NOT catch MemoryError from FileInfo.from_path.
+
+    The narrowed except clause at coordinator.py:116 catches only
+    (OSError, UnicodeDecodeError).  MemoryError is a direct Exception
+    subclass — not a subtype of either — so it MUST propagate through
+    analyze() instead of being silently swallowed.
+
+    Proof: MemoryError.__mro__ = (MemoryError, Exception, BaseException, object).
+    No OSError or UnicodeError in the MRO.
+    """
+    from imodent.analysis.context import FileInfo
+    from imodent.analysis.coordinator import AnalysisCoordinator
+
+    py_file = tmp_path / "mod.py"
+    py_file.write_text("x = 1\n")
+
+    def _mock_from_path(path):
+        raise MemoryError("simulated memory error in from_path")
+
+    monkeypatch.setattr(FileInfo, "from_path", _mock_from_path)
+
+    coordinator = AnalysisCoordinator()
+
+    with pytest.raises(MemoryError, match="simulated memory error"):
+        coordinator.analyze([py_file])
+
+
+def test_coordinator_analyze_system_error_propagates(tmp_path, monkeypatch):
+    """AnalysisCoordinator.analyze() does NOT catch SystemError from FileInfo.from_path.
+
+    Same invariant as test_coordinator_analyze_memory_error_propagates but
+    for SystemError — another direct Exception subclass representing a
+    critical VM-level condition that must not be swallowed by the
+    narrowed (OSError, UnicodeDecodeError) handler at coordinator.py:116.
+    """
+    from imodent.analysis.context import FileInfo
+    from imodent.analysis.coordinator import AnalysisCoordinator
+
+    py_file = tmp_path / "mod.py"
+    py_file.write_text("x = 1\n")
+
+    def _mock_from_path(path):
+        raise SystemError("simulated system error in from_path")
+
+    monkeypatch.setattr(FileInfo, "from_path", _mock_from_path)
+
+    coordinator = AnalysisCoordinator()
+
+    with pytest.raises(SystemError, match="simulated system error"):
+        coordinator.analyze([py_file])

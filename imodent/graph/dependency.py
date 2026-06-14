@@ -51,7 +51,12 @@ def build_dependency_graph(
 
 
 def _find_common_root(paths: list[Path]) -> Path:
-    """Find common ancestor of all paths."""
+    """Find common ancestor of all paths.
+
+    NOTE: Near-identical sibling ``_common_ancestor`` exists in
+    ``imodent.graph.resolve`` (C28 / Pair 2).  Consolidate into one
+    canonical implementation if either logic changes.
+    """
     if not paths:
         return Path.cwd()
 

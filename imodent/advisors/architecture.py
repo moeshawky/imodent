@@ -12,10 +12,24 @@ class ArchitectureAdvisor(Advisor):
 
     @property
     def name(self) -> str:
+        """
+        DFS cycle detection on the dependency graph. For each unvisited module,
+        traverses importees with a recursion stack: if a neighbor is already
+        in rec_stack, a cycle exists (back-edge in the directed graph).
+        O(V + E) where V = modules, E = import edges.
+        """
         return "architecture"
 
     @property
     def priority(self) -> int:
+        """
+        Activation gate. Returns True when:
+        - >5 total import-related findings (threshold for systemic issue)
+        - Circular dependency detected via _find_cycles()
+        - Any single file has >3 unused-import findings
+        These are weighted heuristics, not exhaustive — designed to avoid noise
+        on small projects with few findings.
+        """
         return 7  # Higher priority
 
     def should_advise(self, findings: list[Finding], context: AnalysisContext) -> bool:
@@ -56,19 +70,47 @@ class ArchitectureAdvisor(Advisor):
             )
 
         # Check for circular dependencies
-        if self._has_circular_deps(context):
-            advices.append(
-                Advice(
-                    finding_ids=[],
-                    category="architecture",
-                    summary="Circular dependency detected",
-                    explanation="Modules import each other in a cycle, which can cause import errors and makes code harder to reason about.",
-                    recommendation="Extract shared code into a separate module that both can import, or use late imports inside functions.",
-                    example="# Instead of:\n# module_a.py: from module_b import func_b\n# module_b.py: from module_a import func_a\n\n# Do:\n# module_a.py:\ndef func_a():\n    from module_b import func_b\n    return func_b()",
-                    impact="Circular imports can cause ImportError at runtime and make dependencies unclear.",
-                    priority=9,
+        dep_cycles = self._find_cycles(context)
+        if dep_cycles:
+            for cycle_idx, cycle in enumerate(dep_cycles, 1):
+                cycle_path = " → ".join(cycle)
+                cycle_modules = sorted(set(cycle))
+                # Prefer the last module in the cycle (the one that closes it)
+                # as a suggested extraction target
+                break_module = cycle[-2] if len(cycle) >= 2 else cycle[0]
+                advices.append(
+                    Advice(
+                        finding_ids=[],
+                        category="architecture",
+                        summary=f"Circular dependency #{cycle_idx}: {cycle[0]} ↔ {cycle[-2]}",
+                        explanation=(
+                            f"Modules import each other in a cycle: {cycle_path}. "
+                            f"This can cause ImportError at runtime and makes "
+                            f"dependencies unclear.  Involved modules: "
+                            f"{', '.join(cycle_modules)}."
+                        ),
+                        recommendation=(
+                            f"Extract shared code from '{break_module}' into a "
+                            "separate module that both can import, or use late "
+                            "imports inside functions to break the cycle."
+                        ),
+                        example=(
+                            "# Instead of:\n"
+                            f"# {cycle[0]}: from {cycle[1]} import func\n"
+                            f"# {cycle[1]}: from {cycle[0]} import other\n\n"
+                            "# Do:\n"
+                            f"# {cycle[0]}:\n"
+                            f"def func():\n"
+                            f"    from {cycle[1]} import func\n"
+                            "    return func()"
+                        ),
+                        impact=(
+                            f"Circular imports among {len(cycle_modules)} modules "
+                            "can cause ImportError at runtime."
+                        ),
+                        priority=9,
+                    )
                 )
-            )
 
         # Check for files with many unused imports
         file_counts = Counter(f.file for f in import_issues if "unused" in f.type)
@@ -89,27 +131,69 @@ class ArchitectureAdvisor(Advisor):
         return advices
 
     def _has_circular_deps(self, context: AnalysisContext) -> bool:
-        """Check for circular dependencies in the graph."""
-        graph = context.graph
+        """Check whether the dependency graph contains any import cycle.
 
-        # Simple cycle detection using DFS
-        def has_cycle(node, visited, rec_stack):
+        Delegates to ``_find_cycles()`` and returns True if any cycle exists.
+
+        Args:
+            context: AnalysisContext whose ``.graph`` holds the dependency data.
+
+        Returns:
+            True if at least one cycle is detected, False otherwise.
+        """
+        cycles = self._find_cycles(context)
+        return len(cycles) > 0
+
+    def _find_cycles(self, context: AnalysisContext) -> list[list[str]]:
+        """Detect all import cycles in the dependency graph using DFS.
+
+        Walks ``context.graph.imports`` with a depth-first search.  When a
+        back edge is discovered (neighbor already in the current recursion
+        path), extracts the cycle from the path and appends it to the result.
+
+        Args:
+            context: AnalysisContext whose ``.graph`` holds the dependency data.
+
+        Returns:
+            A list of cycles, each being a ``list[str]`` of module names in
+            traversal order starting from the earliest visited node in the
+            cycle and ending with the node that closes the cycle (duplicate of
+            the first node).  For example, a cycle A→B→C→A produces::
+
+                [["A", "B", "C", "A"]]
+
+            Returns an empty list when no cycles exist.
+
+        Note:
+            Does not attempt to report minimal cycles or eliminate
+            duplicates that share the same set of nodes but differ in
+            starting point.  The first cycle found for each starting
+            module is recorded.
+        """
+        graph = context.graph
+        cycles: list[list[str]] = []
+
+        def dfs(node: str, visited: set[str], in_path: set[str],
+                path: list[str]) -> None:
             visited.add(node)
-            rec_stack.add(node)
+            in_path.add(node)
+            path.append(node)
 
             for neighbor in graph.get_importees(node):
                 if neighbor not in visited:
-                    if has_cycle(neighbor, visited, rec_stack):
-                        return True
-                elif neighbor in rec_stack:
-                    return True
+                    dfs(neighbor, visited, in_path, path)
+                elif neighbor in in_path:
+                    # Back edge → extract cycle from current path
+                    cycle_start = path.index(neighbor)
+                    cycle = [*list(path[cycle_start:]), neighbor]
+                    cycles.append(cycle)
 
-            rec_stack.remove(node)
-            return False
+            path.pop()
+            in_path.remove(node)
 
-        visited = set()
+        visited: set[str] = set()
         for module in graph.imports:
-            if module not in visited and has_cycle(module, visited, set()):
-                return True
+            if module not in visited:
+                dfs(module, visited, set(), [])
 
-        return False
+        return cycles

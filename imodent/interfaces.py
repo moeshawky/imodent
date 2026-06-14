@@ -1,3 +1,7 @@
+# Whether the input content was valid before the fix attempt.
+# false means the content was broken and the fixer ran recovery.
+# True if the fix operation completed without fatal errors.
+# May still be True with warnings present — check `errors` for blocking failures.
 """
 Abstract Base Classes for imodent.
 

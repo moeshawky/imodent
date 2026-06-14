@@ -1353,7 +1353,7 @@ def test_parse_cargo_json_output_malformed_line(tmp_path):
 
 
 def test_read_file_with_error(tmp_path, monkeypatch):
-    """_read_file returns None (silent) when read_text raises an exception."""
+    """_read_file returns None when read_text raises an exception."""
     path = tmp_path / "unreadable.txt"
     path.write_text("will fail to read")
 
@@ -1367,8 +1367,142 @@ def test_read_file_with_error(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "is_socket", lambda self: False)
 
     result = _read_file(path)
-    # _read_file catches all exceptions and returns None silently
     assert result is None
+
+
+# --- 7a. test_read_file_logging: verify log emission for early-return and error paths ---
+
+
+def test_read_file_debug_log_on_symlink(tmp_path, caplog):
+    """_read_file emits DEBUG log when skipping a symlink."""
+    import logging
+
+    target = tmp_path / "real.txt"
+    target.write_text("hello")
+    link = tmp_path / "link.txt"
+    link.symlink_to(target)
+
+    with caplog.at_level(logging.DEBUG):
+        result = _read_file(link)
+
+    assert result is None
+    assert any("Skipping symlink" in rec.message for rec in caplog.records)
+
+
+def test_read_file_debug_log_on_fifo(tmp_path, caplog):
+    """_read_file emits DEBUG log when skipping a FIFO."""
+    import logging
+    import os as _os
+
+    if sys.platform == "win32":
+        pytest.skip("os.mkfifo not available on Windows")
+
+    fifo_path = tmp_path / "myfifo"
+    _os.mkfifo(str(fifo_path))
+
+    with caplog.at_level(logging.DEBUG):
+        result = _read_file(fifo_path)
+
+    assert result is None
+    assert any("Skipping FIFO" in rec.message for rec in caplog.records)
+
+
+def test_read_file_debug_log_on_oversized(tmp_path, caplog, monkeypatch):
+    """_read_file emits DEBUG log when skipping oversized (>10MB) file."""
+    import logging
+
+    large_file = tmp_path / "large.txt"
+    large_file.write_text("small content")
+
+    # Mock stat to return a large file size
+    original_stat = Path.stat
+
+    def _mock_stat(path_self, *, follow_symlinks=True):
+        if path_self == large_file:
+            return os.stat_result(
+                (
+                    0o100644,  # st_mode — regular file
+                    0, 0, 0, 0, 0,
+                    11_000_000,  # st_size — larger than 10 MB threshold
+                    0, 0, 0,
+                )
+            )
+        return original_stat(path_self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", _mock_stat)
+
+    with caplog.at_level(logging.DEBUG):
+        result = _read_file(large_file)
+
+    assert result is None
+    assert any("Skipping oversized file" in rec.message for rec in caplog.records)
+
+
+def test_read_file_warning_on_stat_failure(tmp_path, caplog, monkeypatch):
+    """_read_file emits WARNING log when stat() fails."""
+    import logging
+
+    path = tmp_path / "no_stat.txt"
+    path.write_text("content")
+
+    # Disable type checks so we reach stat()
+    monkeypatch.setattr(Path, "is_symlink", lambda self: False)
+    monkeypatch.setattr(Path, "is_fifo", lambda self: False)
+    monkeypatch.setattr(Path, "is_socket", lambda self: False)
+    # Make stat fail
+    monkeypatch.setattr(Path, "stat", lambda self, **kw: (_ for _ in ()).throw(OSError("stat denied")))
+
+    with caplog.at_level(logging.WARNING):
+        result = _read_file(path)
+
+    assert result is None
+    assert any("Cannot stat" in rec.message for rec in caplog.records)
+
+
+def test_read_file_warning_on_read_failure(tmp_path, caplog, monkeypatch):
+    """_read_file emits WARNING log when read_text() fails with I/O error."""
+    import logging
+
+    path = tmp_path / "unreadable.txt"
+    path.write_text("will fail")
+
+    monkeypatch.setattr(Path, "is_symlink", lambda self: False)
+    monkeypatch.setattr(Path, "is_fifo", lambda self: False)
+    monkeypatch.setattr(Path, "is_socket", lambda self: False)
+
+    def _fail_read(self, *args, **kwargs):
+        raise OSError("read denied")
+
+    monkeypatch.setattr(Path, "read_text", _fail_read)
+
+    with caplog.at_level(logging.WARNING):
+        result = _read_file(path)
+
+    assert result is None
+    assert any("Cannot read" in rec.message for rec in caplog.records)
+
+
+def test_read_file_warning_on_encoding_error(tmp_path, caplog, monkeypatch):
+    """_read_file emits WARNING log when read_text() hits UnicodeDecodeError."""
+    import logging
+
+    path = tmp_path / "bad_encoding.txt"
+    path.write_text("will fail")
+
+    monkeypatch.setattr(Path, "is_symlink", lambda self: False)
+    monkeypatch.setattr(Path, "is_fifo", lambda self: False)
+    monkeypatch.setattr(Path, "is_socket", lambda self: False)
+
+    def _fail_decode(self, *args, **kwargs):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad byte")
+
+    monkeypatch.setattr(Path, "read_text", _fail_decode)
+
+    with caplog.at_level(logging.WARNING):
+        result = _read_file(path)
+
+    assert result is None
+    assert any("Encoding error" in rec.message for rec in caplog.records)
 
 
 # --- 8. test_cargo_oracle_integration: run_cargo=True triggers oracle via analyze() ---

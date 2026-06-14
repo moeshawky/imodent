@@ -394,8 +394,10 @@ def _import_info_from_diagnostic(
 def _is_single_alias_source_line(source_line: str) -> bool:
     """Return whether a Ruff F401 line can be safely removed as a whole line.
 
-    Semantically equivalent to _is_single_alias_import_statement in analyzers/imports.py
-    but operates on a single source line (parsed in isolation) rather than the full file.
+    Semantically equivalent to :func:`_is_single_alias_import_statement` in
+    ``imodent.analyzers.imports`` but operates on a single source line (parsed
+    in isolation) rather than the full file (C28 / Pair 3 — no merge, different
+    inputs and reliability requirements).
     """
     try:
         tree = ast.parse(source_line.lstrip())

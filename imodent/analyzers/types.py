@@ -15,6 +15,12 @@ if TYPE_CHECKING:
 
 
 def check_mypy(context: AnalysisContext) -> list[Finding]:
+    """
+    Runs mypy type checker against all Python files with parsed AST trees.
+    Returns empty list if mypy not on PATH or no Python files found.
+    Uses --ignore-missing-imports --no-error-summary --show-error-codes flags.
+    Delegates subprocess execution to _run_type_checker, parse to _parse_mypy_output.
+    """
     executable = shutil.which("mypy")
     if executable is None:
         return []
@@ -38,6 +44,12 @@ def check_mypy(context: AnalysisContext) -> list[Finding]:
 
 
 def check_pyright(context: AnalysisContext) -> list[Finding]:
+    """
+    Runs pyright type checker against all Python files with parsed AST trees.
+    Returns empty list if pyright not on PATH or no Python files found.
+    Uses --outputjson for machine-parseable output.
+    Delegates subprocess execution to _run_type_checker, parse to _parse_pyright_output.
+    """
     executable = shutil.which("pyright")
     if executable is None:
         return []
@@ -61,6 +73,12 @@ def check_pyright(context: AnalysisContext) -> list[Finding]:
 def _run_type_checker(
     command: list[str], context: AnalysisContext, tool: str
 ) -> list[Finding]:
+    """
+    Shared subprocess runner for mypy and pyright. Runs command with 120s timeout.
+    Error handling: OSError → type_check_failure finding, TimeoutExpired → type_check_timeout finding.
+    Routes to tool-specific parser: mypy → _parse_mypy_output, pyright → _parse_pyright_output.
+    Returns empty list for unknown tools.
+    """
     project_root = context.project_root or Path.cwd()
     try:
         completed = subprocess.run(  # noqa: S603
@@ -102,6 +120,13 @@ def _run_type_checker(
 
 
 def _parse_mypy_output(stdout: str, stderr: str) -> list[Finding]:
+    """
+    Parses mypy text output (file:line:col: message format).
+    Splits each line on ':' with max 3 splits (line 105).
+    Extracts error code from bracketed suffix: "message [error-code]".
+    Severity: "error:" in message → ERROR, "warning:" → WARNING, else → INFO.
+    If stderr is non-empty, appends a type_check_failure finding with first 200 chars.
+    """
     findings = []
     for line in stdout.splitlines():
         line = line.strip()
@@ -158,6 +183,13 @@ def _parse_mypy_output(stdout: str, stderr: str) -> list[Finding]:
 
 
 def _parse_pyright_output(stdout: str) -> list[Finding]:
+    """
+    Parses pyright JSON output. Returns empty list on JSON decode failure.
+    Reads generalDiagnostics array from JSON root.
+    For each diagnostic: extracts file, line (+1 for 0→1-index), column (+1),
+    message, rule code, and severity string.
+    Maps severity strings: error → ERROR, warning → WARNING, else → INFO.
+    """
     findings = []
     try:
         data = json.loads(stdout)

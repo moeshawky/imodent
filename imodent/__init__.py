@@ -1,3 +1,6 @@
+# _pkg_version("imodent") reads version from installed distribution metadata.
+# PackageNotFoundError fires when running from source (pip install -e or PYTHONPATH).
+# The "0.0.0dev" sentinel marks an uninstalled development checkout.
 """
 Code intelligence tool — fix, scan, and advise on Python, JSON, YAML, and Rust.
 """
