@@ -172,9 +172,7 @@ def trace_symbol_usage(
             continue
 
         for node in ast.walk(file_info.ast_tree):
-            if (isinstance(node, ast.Name) and node.id == symbol) or (
-                isinstance(node, ast.Attribute) and node.attr == symbol
-            ):
+            if isinstance(node, ast.Name) and node.id == symbol:
                 usages.append(
                     SymbolUsage(
                         symbol=symbol,
@@ -183,6 +181,28 @@ def trace_symbol_usage(
                         context="reference",
                     )
                 )
+            elif isinstance(node, ast.Attribute):
+                if node.attr == symbol:
+                    usages.append(
+                        SymbolUsage(
+                            symbol=symbol,
+                            file=path,
+                            location=Location(line=node.lineno),
+                            context="reference",
+                        )
+                    )
+                # Also match the qualifier: in `module.symbol()`, the qualifier
+                # `module` may itself be the traced symbol (e.g. `os.path.join`
+                # usage qualifies as `os` usage).
+                if isinstance(node.value, ast.Name) and node.value.id == symbol:
+                    usages.append(
+                        SymbolUsage(
+                            symbol=symbol,
+                            file=path,
+                            location=Location(line=node.lineno),
+                            context="reference",
+                        )
+                    )
 
     return usages
 

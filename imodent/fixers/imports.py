@@ -171,6 +171,12 @@ class ImportFixer(Fixer):
             # In agentic development, an unused import is evidence of
             # unfinished intent — moedularizer traces dependencies and
             # generates proper cross-module wiring.
+            #
+            # NOTE: moedularizer-dependent refactor path is inert until moedularizer
+            # is installed. The _moedularizer_available() gate at module level always
+            # returns False without moedularizer. The refactor option, _wire_import,
+            # and ImodentBridge are defined but unreachable. See CHANGELOG.md
+            # [Unreleased] Added section for moedularizer integration status.
             if _moedularizer_available():
                 options.append(
                     FixOption(
@@ -338,7 +344,7 @@ class ImportFixer(Fixer):
             new_lines = new_lines[:line_idx] + new_lines[line_idx + 1 :]
 
         new_content = "\n".join(new_lines)
-        if content.endswith("\n"):
+        if content.endswith("\n") and not new_content.endswith("\n"):
             new_content += "\n"
 
         try:
@@ -478,6 +484,11 @@ class ImportFixer(Fixer):
             fixed_valid=True,
         )
 
+    # NOTE: moedularizer-dependent refactor path is inert until moedularizer
+    # is installed. The _moedularizer_available() gate at module level always
+    # returns False without moedularizer. The refactor option, _wire_import,
+    # and ImodentBridge are defined but unreachable. See CHANGELOG.md
+    # [Unreleased] Added section for moedularizer integration status.
     def _refactor_import(self, finding: Finding, content: str) -> FixResult:
         """Wire an import using moedularizer dependency analysis.
 

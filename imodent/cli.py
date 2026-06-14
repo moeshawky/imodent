@@ -242,6 +242,13 @@ def analyze_files(
     project_context.config.check_imports = analyze_imports
     project_context.config.check_lint = analyze_lint
 
+    if fix and not analyze_imports:
+        print(
+            "Note: import analysis is disabled in config (check_imports: false). "
+            "Use --imports to override, or --fix may produce zero fixes.",
+            file=sys.stderr,
+        )
+
     # Apply Rust/Cargo flags
     if check_rust or run_cargo or run_cargo_check or run_cargo_clippy:
         project_context.config.check_rust = True
@@ -771,6 +778,28 @@ examples:
 """
 
 
+def _warn_fix_mode_flags(args) -> None:
+    """Warn when SCAN-mode flags are passed but no scan was requested.
+
+    Prints a single stderr line listing each inapplicable flag so the
+    operator knows they are being silently ignored.  Only called from the
+    FIX-mode branch of ``main()``.
+    """
+    warn_flags: list[str] = []
+    if args.verbose:
+        warn_flags.append("--verbose")
+    if args.color is not None:
+        warn_flags.append("--color" if args.color else "--no-color")
+    if args.graph:
+        warn_flags.append("--graph")
+    if warn_flags:
+        print(
+            "Note: the following SCAN-mode flags have no effect in FIX mode: "
+            + ", ".join(warn_flags),
+            file=sys.stderr,
+        )
+
+
 def main():
     """Entry point. Parses CLI args into argparse namespace, routes to either:
     - fix_file() for FIX mode (default, backward-compatible path-based reformatting)
@@ -957,6 +986,7 @@ def main():
         or args.cargo
         or args.cargo_check
         or args.cargo_clippy
+        or args.graph
     )
     if scan_requested:
         if args.recursive:
@@ -994,6 +1024,8 @@ def main():
     elif not args.path:
         parser.print_usage()
     else:
+        # Warn about SCAN-mode flags that have no effect in FIX mode.
+        _warn_fix_mode_flags(args)
         for path in args.path:
             fix_file(
                 path,

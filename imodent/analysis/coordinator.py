@@ -71,25 +71,7 @@ class AnalysisCoordinator:
             self.config = project_context.config
         else:
             self.config = config or AnalysisConfig()
-        self._analyzers = []
-        self._fixers = []
-        self._load_plugins()
-
-    def _load_plugins(self):
-        """Load analyzer and fixer plugins."""
-        from ..analyzers.imports import ImportAnalyzer
-        from ..analyzers.lint import LintAnalyzer
-        from ..analyzers.residue import ResidueAnalyzer
-        from ..analyzers.rust import RustAnalyzer
-        from ..fixers.imports import ImportFixer
-
-        self._analyzers = [
-            ImportAnalyzer(),
-            LintAnalyzer(),
-            ResidueAnalyzer(),
-            RustAnalyzer(),
-        ]
-        self._fixers = [ImportFixer()]
+        self._import_fixer = None  # Bug 6: lazy-init to avoid recreating on every call
 
     def analyze(
         self,
@@ -330,13 +312,18 @@ class AnalysisCoordinator:
                         continue
 
                 elif mode == FixMode.ALL_AUTO:
+                    # ALL_AUTO is more permissive than SAFE_AUTO: it will
+                    # still try non-destructive (safe) options even when
+                    # destructive_allowed is False.  SAFE_AUTO skips
+                    # entirely in that case (see branch above).
                     if (
                         candidate is None
                         or candidate.requires_user_decision
-                        or not candidate.destructive_allowed
                     ):
                         continue
-                    option = _destructive_option(fixer, routed_finding, context)
+                    option = None
+                    if candidate.destructive_allowed:
+                        option = _destructive_option(fixer, routed_finding, context)
                     if not option:
                         option = _first_safe_option(fixer, routed_finding, context)
                     if not option:
@@ -533,14 +520,20 @@ class AnalysisCoordinator:
         return available
 
     def _get_fixer(self, finding: Finding):
-        """Get fixer for a finding."""
-        from ..fixers.imports import ImportFixer
+        """Get fixer for a finding.
 
-        available = [ImportFixer()]
+        Uses a lazy-initialised :class:`ImportFixer` instance stored on
+        ``self._import_fixer`` so the fixer is reused across all findings
+        within a single coordinator lifetime.  The fixer is stateless
+        between calls, so reuse is safe.
+        """
+        if self._import_fixer is None:
+            from ..fixers.imports import ImportFixer
 
-        for fixer in available:
-            if fixer.can_handle(finding):
-                return fixer
+            self._import_fixer = ImportFixer()
+
+        if self._import_fixer.can_handle(finding):
+            return self._import_fixer
         return None
 
     @staticmethod
