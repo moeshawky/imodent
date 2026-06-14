@@ -113,11 +113,21 @@ class AnalysisCoordinator:
 
         # Load file contents
         file_infos = {}
+        load_failures = 0
         for path in files:
             try:
                 file_infos[path] = FileInfo.from_path(path)
             except (OSError, UnicodeDecodeError) as e:
                 print(f"Warning: Could not load {path}: {e}", file=sys.stderr)
+                load_failures += 1
+
+        # Print load-failure summary when any file fails to load; otherwise
+        # callers cannot distinguish "file skipped" from "file never attempted."
+        if load_failures:
+            print(
+                f"Files loaded: {len(file_infos)}, failed to load: {load_failures}",
+                file=sys.stderr,
+            )
 
         # Build dependency graph (use project context root if available)
         if self.project_context is not None:
@@ -261,9 +271,14 @@ class AnalysisCoordinator:
             by_file[finding.file].append(finding)
 
         # Process each file
+        files_with_findings = len(by_file)
+        files_missing_context = 0
+        files_modified = 0
+        findings_without_fixer = 0
         for file_path, file_findings in by_file.items():
             file_info = context.files.get(file_path)
             if not file_info:
+                files_missing_context += 1
                 continue
 
             content = file_info.content
@@ -283,6 +298,7 @@ class AnalysisCoordinator:
                 routed_finding = _finding_with_issue_type(finding, issue_type)
                 fixer = self._get_fixer(routed_finding)
                 if not fixer:
+                    findings_without_fixer += 1
                     continue
 
                 # Determine action based on mode
@@ -342,6 +358,7 @@ class AnalysisCoordinator:
 
             # Store result for this file
             if content != file_info.content:
+                files_modified += 1
                 results[file_path] = FixResult(
                     success=True,
                     content=content,
@@ -350,6 +367,25 @@ class AnalysisCoordinator:
                     original_valid=True,
                     fixed_valid=True,
                 )
+
+        # Print fix-tracking summary so callers can distinguish "file processed
+        # with no actionable fixes" from "file silently skipped." Printed only
+        # when counters are non-zero (silent success needs no noise).
+        if files_modified > 0 or files_missing_context > 0 or findings_without_fixer > 0:
+            files_unchanged = (
+                files_with_findings
+                - files_missing_context
+                - files_modified
+            )
+            parts = [
+                f"Fix summary: {files_modified} files modified",
+                f"{files_unchanged} unchanged",
+            ]
+            if files_missing_context:
+                parts.append(f"{files_missing_context} missing context")
+            if findings_without_fixer:
+                parts.append(f"{findings_without_fixer} findings without fixer")
+            print(", ".join(parts), file=sys.stderr)
 
         return results
 
@@ -438,6 +474,8 @@ class AnalysisCoordinator:
         version changes.
         """
         if not paths:
+            # NOTE: Path.cwd() fallback is last-resort; preferred path is
+            # _find_project_root in project_context.py.
             return Path.cwd()
 
         # Look for common project markers

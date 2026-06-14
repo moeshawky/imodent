@@ -63,11 +63,26 @@ def fix_file(
     force: bool = False,
     recursive: bool = False,
 ):
-    """Reformat one file or directory tree."""
+    """Reformat one file or directory tree.
+
+    Prints per-file status lines and a final aggregate count when multiple
+    files are processed, so callers can distinguish "no files found" from
+    "all files failed."
+    """
     pipeline = FixPipeline(indent_size=indent_size)
     targets = _collect_targets(file_path, recursive=recursive)
+    success_count = 0
+    error_count = 0
     for target in targets:
-        _process_file(pipeline, target, backup, dry_run, check_only, force)
+        if _process_file(pipeline, target, backup, dry_run, check_only, force):
+            success_count += 1
+        else:
+            error_count += 1
+    if success_count + error_count > 1:
+        print(
+            f"Files processed: {success_count} succeeded, {error_count} failed",
+            file=sys.stderr,
+        )
 
 
 def _collect_targets(file_path: Path, recursive: bool = False) -> list[Path]:
@@ -99,25 +114,30 @@ def _collect_targets(file_path: Path, recursive: bool = False) -> list[Path]:
 
 
 def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False):
-    """Fix one file. Write, preview, or validate depending on flags."""
+    """Fix one file. Write, preview, or validate depending on flags.
+
+    Returns:
+        True if the file was processed successfully (including check-only
+        and dry-run modes), False if an error prevented processing.
+    """
     try:
         if file_path.stat().st_size > 10_000_000:
             print(f"✗ {file_path}: file too large (>10MB)", file=sys.stderr)
-            return
+            return False
     except OSError:
         pass
     try:
         content = file_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         print(f"✗ {file_path}: {e}")
-        return
+        return False
 
     if check_only:
         result = pipeline.validate(content, strategy=_strategy_for_path(file_path))
         print(f"{'✓' if result.success else '✗'} {file_path}")
         for err in result.errors:
             print(f" → {err}")
-        return
+        return True
 
     result = pipeline.fix(content, strategy=_strategy_for_path(file_path), force=force)
 
@@ -126,7 +146,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         print(result.content, end="")
         for w in result.warnings:
             print(f" ⚠ {w}")
-        return
+        return True
 
     if not result.success:
         print(f"✗ {file_path}")
@@ -134,7 +154,7 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
             print(f" → {err}")
         for w in result.warnings:
             print(f" ⚠ {w}")
-        return
+        return False
 
     if backup and file_path.suffix.lower() in {
         ".py",
@@ -149,27 +169,28 @@ def _process_file(pipeline, file_path, backup, dry_run, check_only, force=False)
         bak = file_path.with_suffix(file_path.suffix + ".bak")
         if bak.is_symlink():
             print(f"✗ {file_path}: refusing to write backup through symlink: {bak}")
-            return
+            return False
         try:
             shutil.copy2(file_path, bak)
         except OSError as e:
             print(f"✗ {file_path}: could not create backup: {e}")
-            return
+            return False
         print(f" ↳ backup → {bak}")
 
     if file_path.is_symlink():
         print(f"✗ {file_path}: refusing to write through symlink")
-        return
+        return False
     try:
         file_path.write_text(result.content, encoding="utf-8")
     except (OSError, UnicodeError) as e:
         print(f"✗ {file_path}: could not write file: {e}")
-        return
+        return False
     print(f"✓ {file_path}")
     for err in result.errors:
         print(f" ✗ {err}")
     for w in result.warnings:
         print(f" ⚠ {w}")
+    return True
 
 
 def _strategy_for_path(file_path: Path):
@@ -757,6 +778,10 @@ def main():
     Routing decision: any scan flag → analyze; missing path → print usage; otherwise → fix.
     fix_file() never returns a status code — exits 0 on all paths.
     """
+    logging.basicConfig(
+        level=logging.WARNING, format="%(levelname)s: %(message)s"
+    )
+
     parser = argparse.ArgumentParser(
         prog="imodent",
         description=DESCRIPTION,
