@@ -1,5 +1,7 @@
 """Tests for project-level configuration loading."""
 
+from unittest.mock import Mock, patch
+
 from imodent.analysis.context import AnalysisConfig
 from imodent.project.config import (
     _coerce_bool,
@@ -9,7 +11,6 @@ from imodent.project.config import (
     load_config_from_pyproject,
     load_config_from_yaml,
 )
-from unittest.mock import Mock, patch
 
 # ---------------------------------------------------------------------------
 # Default config tests
