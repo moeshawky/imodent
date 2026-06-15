@@ -1422,9 +1422,15 @@ def test_read_file_debug_log_on_oversized(tmp_path, caplog, monkeypatch):
             return os.stat_result(
                 (
                     0o100644,  # st_mode — regular file
-                    0, 0, 0, 0, 0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
                     11_000_000,  # st_size — larger than 10 MB threshold
-                    0, 0, 0,
+                    0,
+                    0,
+                    0,
                 )
             )
         return original_stat(path_self, follow_symlinks=follow_symlinks)
@@ -1450,7 +1456,9 @@ def test_read_file_warning_on_stat_failure(tmp_path, caplog, monkeypatch):
     monkeypatch.setattr(Path, "is_fifo", lambda self: False)
     monkeypatch.setattr(Path, "is_socket", lambda self: False)
     # Make stat fail
-    monkeypatch.setattr(Path, "stat", lambda self, **kw: (_ for _ in ()).throw(OSError("stat denied")))
+    monkeypatch.setattr(
+        Path, "stat", lambda self, **kw: (_ for _ in ()).throw(OSError("stat denied"))
+    )
 
     with caplog.at_level(logging.WARNING):
         result = _read_file(path)

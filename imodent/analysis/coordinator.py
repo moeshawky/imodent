@@ -341,10 +341,7 @@ class AnalysisCoordinator:
                     # still try non-destructive (safe) options even when
                     # destructive_allowed is False.  SAFE_AUTO skips
                     # entirely in that case (see branch above).
-                    if (
-                        candidate is None
-                        or candidate.requires_user_decision
-                    ):
+                    if candidate is None or candidate.requires_user_decision:
                         continue
                     option = None
                     if candidate.destructive_allowed:
@@ -408,11 +405,13 @@ class AnalysisCoordinator:
         # Print fix-tracking summary so callers can distinguish "file processed
         # with no actionable fixes" from "file silently skipped." Printed only
         # when counters are non-zero (silent success needs no noise).
-        if files_modified > 0 or files_missing_context > 0 or findings_without_fixer > 0:
+        if (
+            files_modified > 0
+            or files_missing_context > 0
+            or findings_without_fixer > 0
+        ):
             files_unchanged = (
-                files_with_findings
-                - files_missing_context
-                - files_modified
+                files_with_findings - files_missing_context - files_modified
             )
             parts = [
                 f"Fix summary: {files_modified} files modified",
@@ -805,7 +804,9 @@ def _generate_guidance(finding: Finding) -> str | None:
             "Consider scoping to specific lints instead of blanket suppression."
         )
     if ftype in ("rust_config_missing", "rust_config"):
-        return "Create clippy.toml or update [lints] in Cargo.toml to define lint policy."
+        return (
+            "Create clippy.toml or update [lints] in Cargo.toml to define lint policy."
+        )
     if ftype in ("rust_oracle", "rust_oracle_unavailable"):
         return (
             "External Rust oracle unavailable. "

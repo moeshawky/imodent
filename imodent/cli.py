@@ -292,8 +292,7 @@ def analyze_files(
 
     # ── Aggregated summary view (--summary) ─────────────────────────────
     if summary:
-        _display_summary_view(result, use_color, verbose,
-                              confidence_by_finding_id)
+        _display_summary_view(result, use_color, verbose, confidence_by_finding_id)
         if not confidence:
             return  # Don't show per-finding listing when --summary only
 
@@ -487,6 +486,7 @@ def _sort_findings_by_priority(findings: list) -> list:
     Returns:
         New list sorted by priority (most critical first).
     """
+
     def _priority_key(f):
         code = getattr(f, "lint_code", None) or ""
         if code[:1] == "S" and code[1:2].isdigit():
@@ -531,7 +531,9 @@ def _format_confidence_tag(conf_tuple: tuple | None) -> str:
 
 
 def _display_summary_view(
-    result, use_color: bool, verbose: bool,
+    result,
+    use_color: bool,
+    verbose: bool,
     confidence_lookup: dict[str, tuple[float, str]],
 ) -> None:
     """Print file-level and rule-level aggregated view (--summary flag).
@@ -604,7 +606,8 @@ def _display_top_issues(findings: list, use_color: bool) -> None:
         use_color: Whether to emit ANSI color codes.
     """
     critical = [
-        f for f in findings
+        f
+        for f in findings
         if f.severity in (Severity.ERROR, Severity.WARNING)
         and (
             f.severity == Severity.ERROR
@@ -614,7 +617,9 @@ def _display_top_issues(findings: list, use_color: bool) -> None:
     if not critical:
         return
 
-    critical = sorted(critical, key=lambda f: (0 if f.severity == Severity.ERROR else 1, f.message))
+    critical = sorted(
+        critical, key=lambda f: (0 if f.severity == Severity.ERROR else 1, f.message)
+    )
     top3 = critical[:3]
 
     color_fn = _severity_color(Severity.ERROR) if use_color else lambda x: x
@@ -810,9 +815,7 @@ def main():
     Routing decision: any scan flag → analyze; missing path → print usage; otherwise → fix.
     fix_file() never returns a status code — exits 0 on all paths.
     """
-    logging.basicConfig(
-        level=logging.WARNING, format="%(levelname)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     parser = argparse.ArgumentParser(
         prog="imodent",

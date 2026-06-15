@@ -914,14 +914,14 @@ def test_file_to_module_top_level():
 
 def test_file_to_module_outside_root():
     """_file_to_module falls back to file stem when path is outside project root."""
-    assert _file_to_module(Path("/elsewhere/standalone.py"), Path("/proj")) == "standalone"
+    assert (
+        _file_to_module(Path("/elsewhere/standalone.py"), Path("/proj")) == "standalone"
+    )
 
 
 def test_file_to_module_deeply_nested():
     """_file_to_module handles deeply nested module paths."""
-    result = _file_to_module(
-        Path("/proj/pkg/sub/deep/module.py"), Path("/proj")
-    )
+    result = _file_to_module(Path("/proj/pkg/sub/deep/module.py"), Path("/proj"))
     assert result == "pkg.sub.deep.module"
 
 
@@ -1037,7 +1037,10 @@ def test_format_import_bare():
 
 def test_format_import_bare_with_alias():
     """_format_import adds 'as alias' for bare imports with alias."""
-    assert _format_import("os", "os", "operating_system") == "import os as operating_system"
+    assert (
+        _format_import("os", "os", "operating_system")
+        == "import os as operating_system"
+    )
 
 
 def test_format_import_from_with_alias():
@@ -1231,9 +1234,7 @@ def test_resolve_undefined_name_truly_undefined(tmp_path):
 
     files = {mod_py: FileInfo.from_path(mod_py)}
     suggestions = resolve_undefined_name("nonexistent", files, project_root)
-    assert suggestions == [], (
-        f"'nonexistent' should not be found, got: {suggestions}"
-    )
+    assert suggestions == [], f"'nonexistent' should not be found, got: {suggestions}"
 
 
 def test_resolve_undefined_name_stdlib_fallback(tmp_path):
@@ -1318,9 +1319,7 @@ def test_resolve_undefined_name_skips_non_python(tmp_path):
 
     suggestions = resolve_undefined_name("helper", files, project_root)
     # 'helper' not in mod.py, and data.json is skipped (not Python)
-    assert suggestions == [], (
-        f"Non-Python files should be skipped, got: {suggestions}"
-    )
+    assert suggestions == [], f"Non-Python files should be skipped, got: {suggestions}"
 
 
 def test_resolve_undefined_name_empty_files(tmp_path):

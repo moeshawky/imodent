@@ -239,7 +239,7 @@ class DependencyGraph:
         lines: list[str] = [
             "digraph imodent_deps {",
             '    rankdir="LR";',
-            '    node [shape=box, style=rounded];',
+            "    node [shape=box, style=rounded];",
         ]
         modules = sorted(set(self.imports.keys()) | set(self.imported_by.keys()))
         for module in modules:

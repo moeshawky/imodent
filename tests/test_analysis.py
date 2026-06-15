@@ -2290,7 +2290,9 @@ def test_find_cycles_simple_cycle():
     assert isinstance(cycle, list), f"Each cycle should be list, got {type(cycle)}"
     assert len(cycle) == 3, f"Expected 3-node cycle, got {cycle}"
     assert cycle[0] == cycle[-1], f"Cycle must close: {cycle}"
-    assert set(cycle) == {"module_a", "module_b"}, f"Cycle must contain both modules: {cycle}"
+    assert set(cycle) == {"module_a", "module_b"}, (
+        f"Cycle must contain both modules: {cycle}"
+    )
 
 
 def test_find_cycles_no_cycle():
@@ -2324,7 +2326,9 @@ def test_find_cycles_multiple_cycles():
     cycles = advisor._find_cycles(context)
 
     assert isinstance(cycles, list)
-    assert len(cycles) == 2, f"Expected 2 independent cycles, got {len(cycles)}: {cycles}"
+    assert len(cycles) == 2, (
+        f"Expected 2 independent cycles, got {len(cycles)}: {cycles}"
+    )
     # Each cycle must close (first == last)
     for cycle in cycles:
         assert cycle[0] == cycle[-1], f"Cycle does not close: {cycle}"
@@ -4129,6 +4133,7 @@ def test_coordinator_analyze_skips_generated_artifacts():
             "Files inside .venv must be excluded from discovery"
         )
 
+
 # ============================================================================
 # DependencyGraph serialization tests — to_dict, to_mermaid, to_dot
 # ============================================================================
@@ -4253,7 +4258,7 @@ def test_dependency_graph_to_dot():
     # Header
     assert lines[0] == "digraph imodent_deps {"
     assert 'rankdir="LR";' in output
-    assert 'node [shape=box, style=rounded];' in output
+    assert "node [shape=box, style=rounded];" in output
 
     # Node declarations
     node_lines = [ln for ln in lines if "[label=" in ln]
@@ -4282,11 +4287,12 @@ def test_dependency_graph_to_dot_empty():
     # Header present, no node declarations, closing brace
     assert output.startswith("digraph imodent_deps {")
     assert 'rankdir="LR";' in output
-    assert 'node [shape=box, style=rounded];' in output
+    assert "node [shape=box, style=rounded];" in output
     assert output.rstrip().endswith("}")
     # No node entries
     assert "[label=" not in output
     assert " -> " not in output
+
 
 # ============================================================================
 # MemoryError / SystemError propagation — coordinator narrowed handlers

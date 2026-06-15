@@ -159,6 +159,7 @@ class YAMLStrategy(LanguageStrategy):
                 indentless=True for the first level of indentation after a list).
                 This is a known PyYAML behavior issue; the hack is the standard workaround.
                 """
+
                 pass
 
             def increase_indent(self, flow=False, indentless=False):

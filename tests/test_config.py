@@ -399,6 +399,7 @@ def test_get_toml_loader_fallback_toml():
 
 def test_get_toml_loader_none_available():
     """_get_toml_loader returns None when no TOML library is available."""
+
     def _mock_import(name):
         raise ImportError(f"No module named '{name}'")
 

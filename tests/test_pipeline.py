@@ -170,7 +170,9 @@ def test_pipeline_fix_force_positive_fallback():
         def detect(self, content: str) -> bool:
             return False
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             if force and content.strip() == MARKER:
                 return FixResult(
                     success=True,
@@ -204,7 +206,9 @@ def test_pipeline_fix_force_positive_fallback():
         def detect(self, content: str) -> bool:
             return False
 
-        def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
+        def fix(
+            self, content: str, indent_size: int = 4, force: bool = False
+        ) -> FixResult:
             return FixResult(
                 success=False,
                 content=content,

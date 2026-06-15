@@ -173,8 +173,9 @@ class ArchitectureAdvisor(Advisor):
         graph = context.graph
         cycles: list[list[str]] = []
 
-        def dfs(node: str, visited: set[str], in_path: set[str],
-                path: list[str]) -> None:
+        def dfs(
+            node: str, visited: set[str], in_path: set[str], path: list[str]
+        ) -> None:
             visited.add(node)
             in_path.add(node)
             path.append(node)

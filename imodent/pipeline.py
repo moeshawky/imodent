@@ -85,7 +85,9 @@ class FixPipeline:
                 StrategyRegistry._load_builtins()
                 for _name, strategy_cls in StrategyRegistry._strategies.items():
                     try:
-                        result = strategy_cls().fix(content, self.indent_size, force=True)
+                        result = strategy_cls().fix(
+                            content, self.indent_size, force=True
+                        )
                         if result.success:
                             return result
                     except Exception as exc:

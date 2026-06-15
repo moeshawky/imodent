@@ -126,8 +126,12 @@ class ImportFixer(Fixer):
 
     @property
     def handles(self):
-        return {"unused_import", "unused_import_file", "duplicate_import",
-                "undefined_api"}
+        return {
+            "unused_import",
+            "unused_import_file",
+            "duplicate_import",
+            "undefined_api",
+        }
 
     def can_auto_fix(self, finding: Finding) -> bool:
         """Check if finding can be safely auto-fixed.
@@ -251,8 +255,13 @@ class ImportFixer(Fixer):
 
         return options
 
-    def apply_fix(self, finding: Finding, option: FixOption, content: str,
-                  context: AnalysisContext | None = None) -> FixResult:
+    def apply_fix(
+        self,
+        finding: Finding,
+        option: FixOption,
+        content: str,
+        context: AnalysisContext | None = None,
+    ) -> FixResult:
         """Apply the selected fix option.
 
         The *context* parameter is optional and used only for
@@ -631,9 +640,13 @@ class ImportFixer(Fixer):
         )
         return options
 
-    def _add_import(self, finding: Finding, option: FixOption,
-                    content: str, context: AnalysisContext | None = None
-                    ) -> FixResult:
+    def _add_import(
+        self,
+        finding: Finding,
+        option: FixOption,
+        content: str,
+        context: AnalysisContext | None = None,
+    ) -> FixResult:
         """Insert a missing import statement into *content*.
 
         Uses *option.preview* as the import statement if available,
@@ -646,9 +659,12 @@ class ImportFixer(Fixer):
             undefined_name = _extract_undefined_name(finding)
             if not undefined_name:
                 return FixResult(
-                    success=False, content=content,
+                    success=False,
+                    content=content,
                     errors=["Cannot extract undefined name from F821 finding"],
-                    warnings=[], original_valid=True, fixed_valid=True,
+                    warnings=[],
+                    original_valid=True,
+                    fixed_valid=True,
                 )
             suggestions = _resolve_import_for_finding(finding, context)
             if not suggestions:
@@ -660,15 +676,14 @@ class ImportFixer(Fixer):
         insert_line = _find_import_insertion_point(content)
         lines = content.splitlines()
         # insert_line is 0-indexed position in the lines list
-        new_lines = (
-            [*lines[:insert_line], import_stmt, *lines[insert_line:]]
-        )
+        new_lines = [*lines[:insert_line], import_stmt, *lines[insert_line:]]
         # Add blank line after the new import if the following line is
         # not blank and not another import
-        if (insert_line < len(new_lines) - 1
-                and new_lines[insert_line + 1].strip()
-                and not new_lines[insert_line + 1].strip().startswith(
-                    ("import ", "from "))):
+        if (
+            insert_line < len(new_lines) - 1
+            and new_lines[insert_line + 1].strip()
+            and not new_lines[insert_line + 1].strip().startswith(("import ", "from "))
+        ):
             new_lines.insert(insert_line + 1, "")
 
         new_content = "\n".join(new_lines)
@@ -680,15 +695,21 @@ class ImportFixer(Fixer):
             ast.parse(new_content)
         except SyntaxError as e:
             return FixResult(
-                success=False, content=content,
+                success=False,
+                content=content,
                 errors=[f"Import insertion would break syntax: {e}"],
-                warnings=[], original_valid=True, fixed_valid=False,
+                warnings=[],
+                original_valid=True,
+                fixed_valid=False,
             )
 
         return FixResult(
-            success=True, content=new_content,
-            errors=[], warnings=[f"Added import: {import_stmt}"],
-            original_valid=True, fixed_valid=True,
+            success=True,
+            content=new_content,
+            errors=[],
+            warnings=[f"Added import: {import_stmt}"],
+            original_valid=True,
+            fixed_valid=True,
         )
 
 
@@ -722,15 +743,13 @@ def _resolve_import_for_finding(
     undefined_name = _extract_undefined_name(finding)
     if not undefined_name:
         logging.warning(
-            "Cannot resolve import for finding %s: "
-            "failed to extract undefined name",
+            "Cannot resolve import for finding %s: failed to extract undefined name",
             finding.id,
         )
         return []
     if context is None or not context.files:
         logging.warning(
-            "Cannot resolve import for finding %s: "
-            "context is None or has no files",
+            "Cannot resolve import for finding %s: context is None or has no files",
             finding.id,
         )
         return []
@@ -792,8 +811,7 @@ def _find_import_insertion_point(content: str) -> int:
     if last_import_idx >= 0:
         # Skip any blank lines that follow the last import
         insert_at = last_import_idx + 1
-        while (insert_at < len(lines)
-               and not lines[insert_at].strip()):
+        while insert_at < len(lines) and not lines[insert_at].strip():
             insert_at += 1
         return insert_at
     return 0
