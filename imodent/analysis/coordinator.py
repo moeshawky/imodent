@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import contextlib
 import fnmatch
+import json
+import subprocess
 import sys
 import time
 from dataclasses import replace
@@ -72,6 +74,7 @@ class AnalysisCoordinator:
         else:
             self.config = config or AnalysisConfig()
         self._import_fixer = None  # Bug 6: lazy-init to avoid recreating on every call
+        self._analyzer_failures: list[str] = []
 
     def analyze(
         self,
@@ -86,12 +89,18 @@ class AnalysisCoordinator:
         from "file never attempted".  Prints a ``Files loaded: N,
         failed to load: M`` summary when any file fails to load.
 
+        Analyzer-stage failures (mypy, pyright, cross-file evidence)
+        are caught individually and tracked in
+        ``AnalysisResult.analyzer_failures`` so callers can detect
+        an incomplete scan (empty findings + non-empty failure list).
+
         Args:
             paths: Files/directories to analyze
             analyzers: Specific analyzers to run (None = all)
 
         Returns:
-            AnalysisResult with files, graph, and findings
+            AnalysisResult with files, graph, findings, and
+            ``analyzer_failures`` list.
         """
         start_time = time.time()
 
@@ -139,12 +148,16 @@ class AnalysisCoordinator:
             try:
                 findings = analyzer.analyze(context)
                 all_findings.extend(findings)
-            # NOTE: broad except Exception here is technical debt — warn-and-continue
-            # resilience for scan pipeline prevents single-analyzer failures from aborting.
-            # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
-            # Narrow to specific exception types when the failure surface is understood.
-            except Exception as e:
+            except (
+                OSError,
+                subprocess.CalledProcessError,
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+                RuntimeError,
+            ) as e:
                 print(f"Warning: Analyzer {analyzer.name} failed: {e}", file=sys.stderr)
+                self._analyzer_failures.append(analyzer.name)
 
         all_findings = _deduplicate_findings(all_findings)
 
@@ -170,33 +183,40 @@ class AnalysisCoordinator:
 
             try:
                 all_findings.extend(check_mypy(context))
-            # NOTE: broad except Exception here is technical debt — mypy subprocess
-            # failures should not abort the entire scan pipeline.
-            # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
-            # Narrow to specific exception types when the failure surface is understood.
-            except Exception as e:
+            except (
+                OSError,
+                subprocess.CalledProcessError,
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+                RuntimeError,
+            ) as e:
                 print(f"Warning: mypy check failed: {e}", file=sys.stderr)
+                self._analyzer_failures.append("mypy")
 
         if self.config.use_pyright:
             from ..analyzers.types import check_pyright
 
             try:
                 all_findings.extend(check_pyright(context))
-            # NOTE: broad except Exception here is technical debt — pyright subprocess
-            # failures should not abort the entire scan pipeline.
-            # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
-            # Narrow to specific exception types when the failure surface is understood.
-            except Exception as e:
+            except (
+                OSError,
+                subprocess.CalledProcessError,
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+                RuntimeError,
+            ) as e:
                 print(f"Warning: pyright check failed: {e}", file=sys.stderr)
+                self._analyzer_failures.append("pyright")
 
         # Cross-project symbol usage evidence (gated by config.check_imports)
         if self.config.check_imports:
-            # NOTE: broad except Exception here is technical debt — cross-file
-            # evidence is internal code whose failure should not be hidden
             try:
                 _add_cross_file_evidence(all_findings, context)
-            except Exception as e:
+            except (ValueError, TypeError, RuntimeError) as e:
                 print(f"Warning: cross-file evidence failed: {e}", file=sys.stderr)
+                self._analyzer_failures.append("cross_file_evidence")
 
         self._initialize_proof_states(all_findings)
         self._attach_guidance(all_findings)
@@ -213,6 +233,7 @@ class AnalysisCoordinator:
             elapsed_time=elapsed,
             analyzer_names=[a.name for a in self._get_analyzers(analyzers)],
             candidates=candidates,
+            analyzer_failures=self._analyzer_failures,
         )
 
     def fix(
@@ -232,6 +253,10 @@ class AnalysisCoordinator:
         M unchanged`` (plus missing-context and without-fixer counts when
         non-zero) so callers can differentiate "no actionable fixes" from
         "file silently skipped."
+
+        Fixer application failures (``OSError``, ``ValueError``, etc.) are
+        caught per-finding and reported on stderr so that one broken fixer
+        invocation does not abort the remaining fix pass.
 
         Args:
             findings: Findings to fix
@@ -350,10 +375,23 @@ class AnalysisCoordinator:
                         continue
 
                 if option:
-                    result = fixer.apply_fix(routed_finding, option, content)
-                    if result.success:
-                        finding.proof_state = ProofState.ACCEPTED.value
-                        content = result.content
+                    try:
+                        result = fixer.apply_fix(routed_finding, option, content)
+                        if result.success:
+                            finding.proof_state = ProofState.ACCEPTED.value
+                            content = result.content
+                    except (
+                        OSError,
+                        UnicodeDecodeError,
+                        json.JSONDecodeError,
+                        ValueError,
+                        TypeError,
+                        RuntimeError,
+                    ) as e:
+                        print(
+                            f"Warning: fixer failed for {routed_finding.id}: {e}",
+                            file=sys.stderr,
+                        )
 
             # Store result for this file
             if content != file_info.content:
@@ -462,41 +500,24 @@ class AnalysisCoordinator:
         )
 
     def _find_project_root(self, paths: list[Path]) -> Path:
-        """Find project root from paths.
+        """Delegates marker-based lookup to canonical implementation.
 
-        NOTE: Duplicated logic exists at
-        :func:`imodent.project.project_context._find_project_root`
-        (C28 / Pair 4).  The module-level function in project_context
-        uses ``PROJECT_MARKERS`` which includes ``setup.cfg`` — this
-        method's inline marker list has been synchronised accordingly.
-        Consolidate into a single canonical implementation if either
-        version changes.
+        Uses :func:`imodent.project.project_context._find_project_root` for
+        the marker walk-up so that the ``PROJECT_MARKERS`` list lives in
+        exactly one place.  When the delegated lookup returns ``None``
+        (no marker found in the ancestor chain), falls back to the first
+        path itself — matching the pre-consolidation behavior.
         """
         if not paths:
-            # NOTE: Path.cwd() fallback is last-resort; preferred path is
-            # _find_project_root in project_context.py.
             return Path.cwd()
+        from ..project.project_context import (
+            _find_project_root as _pc_find_root,
+        )
 
-        # Look for common project markers
-        markers = [
-            "pyproject.toml",
-            "setup.py",
-            "setup.cfg",
-            ".git",
-            "requirements.txt",
-        ]
-
-        for path in paths:
-            if path.is_file():
-                path = path.parent
-
-            # Walk up looking for markers
-            current = path
-            while current != current.parent:
-                if any((current / m).exists() for m in markers):
-                    return current
-                current = current.parent
-
+        root = _pc_find_root(paths[0])
+        if root is not None:
+            return root
+        # No project markers found — treat the first path itself as the root.
         return paths[0].parent if paths[0].is_file() else paths[0]
 
     def _get_analyzers(self, names: list[str] | None = None) -> list:
@@ -819,12 +840,14 @@ def _rule_key(finding: Finding) -> str:
 
 
 class AnalysisResult:
-    # The else branch at line 231 catch-all for unknown FixMode checks pre-made
-    # decisions dict. This code path is unreachable because the four FixMode enum
-    # values (SAFE_AUTO, ALL_AUTO, INTERACTIVE, REPORT) are all handled by
-    # preceding elif branches. The code exists as a defensive pattern against
-    # future enum additions.
-    """Result of an analysis run."""
+    """Result of an analysis run.
+
+    Carries the full ``AnalysisContext`` (files, graph, findings, evidence),
+    timing metadata, and the list of ``DecisionCandidate`` objects built by
+    the ``DecisionEngine``.  When one or more analyzers or oracle stages
+    fail during the scan, ``analyzer_failures`` names each failed component
+    so callers can distinguish "clean scan" from "incomplete scan."
+    """
 
     def __init__(
         self,
@@ -832,11 +855,23 @@ class AnalysisResult:
         elapsed_time: float,
         analyzer_names: list[str],
         candidates: list | None = None,
+        analyzer_failures: list[str] | None = None,
     ):
+        """
+        Args:
+            context: Shared analysis state (files, graph, findings, evidence).
+            elapsed_time: Wall-clock seconds for the full analysis pass.
+            analyzer_names: Names of every analyzer that was run.
+            candidates: ``DecisionCandidate`` list from ``DecisionEngine``.
+            analyzer_failures: Names of analyzers or oracle stages that
+                raised a handled exception during the scan.  An empty list
+                means every stage completed without known errors.
+        """
         self.context = context
         self.elapsed_time = elapsed_time
         self.analyzer_names = analyzer_names
         self.candidates = candidates or []
+        self.analyzer_failures = analyzer_failures or []
 
     @property
     def files(self) -> dict[Path, FileInfo]:

@@ -280,7 +280,14 @@ def analyze_files(
     print(result.summary())
     print()
     if not result.findings:
-        print("✓ Clean — no issues detected.")
+        if result.analyzer_failures:
+            failed = ", ".join(result.analyzer_failures)
+            print(
+                f"⚠ Clean result but {len(result.analyzer_failures)} "
+                f"analyzer(s) failed: {failed}. Results may be incomplete."
+            )
+        else:
+            print("✓ Clean — no issues detected.")
         return
 
     # ── Aggregated summary view (--summary) ─────────────────────────────
@@ -709,11 +716,7 @@ def _display_graph_output(result) -> None:
     try:
         mermaid = graph.to_mermaid()
         print(mermaid)
-    # NOTE: broad except Exception here is technical debt — Mermaid diagram
-    # rendering is display-only; failures should not abort the entire tool.
-    # This would catch MemoryError/KeyboardInterrupt/SystemExit which should propagate.
-    # Narrow to specific exception types when the failure surface is understood.
-    except Exception as exc:
+    except (TypeError, ValueError, KeyError, AttributeError, RuntimeError) as exc:
         print(f"  Error rendering graph: {exc}")
 
 
