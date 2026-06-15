@@ -92,6 +92,8 @@ def resolve_undefined_name(
             continue
 
         tree = file_info.ast_tree
+        if not isinstance(tree, ast.Module):
+            raise TypeError(f"Expected AST Module, got {type(tree).__name__}")
         for node in tree.body:
             match node:
                 case ast.FunctionDef() if node.name == name:

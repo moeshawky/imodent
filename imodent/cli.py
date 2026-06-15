@@ -585,12 +585,12 @@ def _display_summary_view(
     print("═══ Per-file rule breakdown ═══")
     for fname in sorted(by_file.keys()):
         items = by_file[fname]
-        code_counts: dict[str, int] = defaultdict(int)
+        rule_counts: dict[str, int] = defaultdict(int)
         for code, _ in items:
-            code_counts[code] += 1
+            rule_counts[code] += 1
         breakdown = ", ".join(
             f"{code}({cnt})"
-            for code, cnt in sorted(code_counts.items(), key=lambda x: -x[1])
+            for code, cnt in sorted(rule_counts.items(), key=lambda x: -x[1])
         )
         print(f"  {fname}: {len(items)} total — {breakdown}")
 

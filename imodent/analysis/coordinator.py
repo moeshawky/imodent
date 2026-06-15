@@ -552,8 +552,9 @@ class AnalysisCoordinator:
 
             self._import_fixer = ImportFixer()
 
-        if self._import_fixer.can_handle(finding):
-            return self._import_fixer
+        fixer: ImportFixer = self._import_fixer
+        if fixer.can_handle(finding):
+            return fixer
         return None
 
     @staticmethod
