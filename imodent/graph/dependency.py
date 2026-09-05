@@ -45,7 +45,7 @@ def build_dependency_graph(
 
         for imp in imports:
             # Resolve the import to a module name
-            importee_module = _resolve_import(imp, project_root, graph)
+            importee_module = _resolve_import(imp, project_root, graph, importer_module)
             if importee_module and importee_module != importer_module:
                 graph.add_import(importer_module, importee_module)
 
@@ -82,7 +82,10 @@ def _find_common_root(paths: list[Path]) -> Path:
 
 
 def _resolve_import(
-    imp: ImportInfo, project_root: Path, graph: DependencyGraph
+    imp: ImportInfo,
+    project_root: Path,
+    graph: DependencyGraph,
+    importer_module: str = "",
 ) -> str | None:
     """Resolve an import to a module name.
 
@@ -90,10 +93,18 @@ def _resolve_import(
         imp: ImportInfo object
         project_root: Project root path
         graph: Current dependency graph
+        importer_module: Dotted name of the importing module (for relatives)
 
     Returns:
         Resolved module name or None if not found
     """
+    level = getattr(imp, "level", 0) or 0
+
+    if level > 0:
+        # Relative import: resolve against the importer package.
+        # Relative + unresolvable → skip phantom edge (return None).
+        return _resolve_relative(imp, importer_module, graph, project_root)
+
     module = imp.module
 
     # Check if it's a local module
@@ -113,6 +124,56 @@ def _resolve_import(
     # It's likely a third-party module
     # Still track it in the graph for usage analysis
     return module
+
+
+def _resolve_relative(
+    imp: ImportInfo,
+    importer_module: str,
+    graph: DependencyGraph,
+    project_root: Path,
+) -> str | None:
+    """Resolve a relative import against the importer package.
+
+    Returns the qualified module name, or None when unresolvable
+    (caller skips the edge instead of adding a phantom node).
+    """
+    if not importer_module:
+        return None
+    level = getattr(imp, "level", 0) or 0
+    if level <= 0:
+        return None
+
+    importer_file = graph.module_to_file.get(importer_module)
+    is_pkg = importer_file is not None and Path(importer_file).name == "__init__.py"
+    parts = importer_module.split(".") if importer_module else []
+    package_parts = list(parts) if is_pkg else parts[:-1]
+
+    # level=1 → current package; level=N → go up (N-1) levels.
+    up = level - 1
+    if up > len(package_parts):
+        return None
+    base = package_parts[: len(package_parts) - up] if up else list(package_parts)
+
+    if imp.module:
+        candidate = ".".join([*base, imp.module]) if base else None
+        if candidate is None:
+            return None
+    else:
+        # `from . import X` → submodule X of the base package.
+        if not base or not imp.name or imp.name == "*":
+            return None
+        candidate = ".".join([*base, imp.name])
+
+    if candidate in graph.module_to_file:
+        return candidate
+    possible_paths = [
+        project_root / f"{candidate.replace('.', '/')}.py",
+        project_root / candidate.replace(".", "/") / "__init__.py",
+    ]
+    for path in possible_paths:
+        if path.exists():
+            return resolve_module_name(path, project_root)
+    return None
 
 
 def find_unused_imports(

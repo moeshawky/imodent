@@ -20,6 +20,7 @@ class ImportInfo:
     line: int
     is_from_import: bool
     file: Path
+    level: int = 0  # Relative import level (leading dots in ImportFrom)
 
     @property
     def full_name(self) -> str:
@@ -72,6 +73,7 @@ def extract_imports(source: str, file: Path) -> list[ImportInfo]:
                 )
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
+            level = node.level or 0
             for alias in node.names:
                 imports.append(
                     ImportInfo(
@@ -81,6 +83,7 @@ def extract_imports(source: str, file: Path) -> list[ImportInfo]:
                         line=node.lineno,
                         is_from_import=True,
                         file=file,
+                        level=level,
                     )
                 )
 
@@ -95,8 +98,8 @@ def _extract_imports_regex(source: str, file: Path) -> list[ImportInfo]:
     # Match: import X, import X as Y, import X, Y, Z
     import_pattern = r"^import\s+([a-zA-Z_][a-zA-Z0-9_.]*(?:\s+as\s+[a-zA-Z_][a-zA-Z0-9_]*)?(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_.]*(?:\s+as\s+[a-zA-Z_][a-zA-Z0-9_]?)?)*)"
 
-    # Match: from X import Y, from X import Y as Z
-    from_pattern = r"^from\s+([a-zA-Z_][a-zA-Z0-9_.]*)\s+import\s+(.+)"
+    # Match: from X import Y, from X import Y as Z (with optional leading dots)
+    from_pattern = r"^from\s+(\.*)([a-zA-Z_][a-zA-Z0-9_.]*)?\s+import\s+(.+)"
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -108,8 +111,10 @@ def _extract_imports_regex(source: str, file: Path) -> list[ImportInfo]:
         # Try from import first
         match = re.match(from_pattern, stripped)
         if match:
-            module = match.group(1)
-            names_part = match.group(2)
+            dots = match.group(1) or ""
+            level = len(dots)
+            module = match.group(2) or ""
+            names_part = match.group(3)
 
             # Parse names (could be: Y, Y as Z, Y, Z as W)
             for name_spec in names_part.split(","):
@@ -130,6 +135,7 @@ def _extract_imports_regex(source: str, file: Path) -> list[ImportInfo]:
                         line=i,
                         is_from_import=True,
                         file=file,
+                        level=level,
                     )
                 )
             continue

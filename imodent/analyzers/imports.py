@@ -48,6 +48,15 @@ _PROTECTION_MARKERS = re.compile(
     r"#\s*(do not remove|side.effect|registration|trigger)", re.IGNORECASE
 )
 
+_NOQA_PATTERN = re.compile(r"#\s*noqa\b", re.IGNORECASE)
+
+
+def _has_noqa_comment(content_lines: list[str], lineno: int) -> bool:
+    """Check if physical 1-based line carries a # noqa suppression comment."""
+    if lineno < 1 or lineno > len(content_lines):
+        return False
+    return bool(_NOQA_PATTERN.search(content_lines[lineno - 1]))
+
 
 def _is_in_try_block(content: str, line: int) -> bool:
     """Check if line is inside a try block."""
@@ -296,6 +305,9 @@ def _detect_import_intent(
     for i in range(max(0, imp.line - 3), min(len(lines), imp.line + 1)):
         if i < len(lines) and _PROTECTION_MARKERS.search(lines[i]):
             return "side_effect", "Protected by comment marker", False
+
+    if _has_noqa_comment(lines, imp.line):
+        return ("side_effect", "Suppressed by # noqa comment", False)
 
     # __all__ is a stronger re-export signal regardless of filename
     if dunder_all_names:

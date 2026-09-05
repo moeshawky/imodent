@@ -82,8 +82,12 @@ class FileInfo:
         if language == "python":
             try:
                 ast_tree = ast.parse(content, type_comments=True)
-            except SyntaxError:
-                has_errors = True
+            except (SyntaxError, ValueError):
+                try:
+                    ast_tree = ast.parse(content)
+                except (SyntaxError, ValueError):
+                    has_errors = True
+                    ast_tree = None
 
         return cls(
             path=path,

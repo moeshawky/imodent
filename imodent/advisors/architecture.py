@@ -172,6 +172,8 @@ class ArchitectureAdvisor(Advisor):
         """
         graph = context.graph
         cycles: list[list[str]] = []
+        known = set(getattr(graph, "module_to_file", {}))
+        restrict = len(known) > 0
 
         def dfs(
             node: str, visited: set[str], in_path: set[str], path: list[str]
@@ -181,6 +183,8 @@ class ArchitectureAdvisor(Advisor):
             path.append(node)
 
             for neighbor in graph.get_importees(node):
+                if restrict and neighbor not in known:
+                    continue
                 if neighbor not in visited:
                     dfs(neighbor, visited, in_path, path)
                 elif neighbor in in_path:
@@ -194,6 +198,8 @@ class ArchitectureAdvisor(Advisor):
 
         visited: set[str] = set()
         for module in graph.imports:
+            if restrict and module not in known:
+                continue
             if module not in visited:
                 dfs(module, visited, set(), [])
 

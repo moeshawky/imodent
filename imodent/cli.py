@@ -815,6 +815,10 @@ def main():
     Routing decision: any scan flag → analyze; missing path → print usage; otherwise → fix.
     fix_file() never returns a status code — exits 0 on all paths.
     """
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     parser = argparse.ArgumentParser(
