@@ -4227,7 +4227,9 @@ def test_dependency_graph_to_dict():
     ]
     assert len(cli_to_context) == 1
     assert cli_to_context[0]["from_file"] == str(Path("/fake/imodent/cli.py"))
-    assert cli_to_context[0]["to_file"] == str(Path("/fake/imodent/analysis/context.py"))
+    assert cli_to_context[0]["to_file"] == str(
+        Path("/fake/imodent/analysis/context.py")
+    )
 
 
 def test_dependency_graph_to_dict_empty():
