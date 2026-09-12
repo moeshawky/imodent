@@ -93,6 +93,9 @@ class RustAnalyzer(Analyzer):
 # ---------------------------------------------------------------------------
 
 
+_WORKSPACE_MEMBER_RE = re.compile(r'"([^"]+)"')
+
+
 def _discover_cargo_roots(
     context: AnalysisContext,
     rust_files: list[Path],
@@ -137,9 +140,7 @@ def _discover_cargo_roots(
                     stripped = line.strip()
                     if stripped.startswith("members") and "=" in stripped:
                         # Parse: members = ["crate1", "crate2"] or members = ["crate1"]
-                        import re as _re
-
-                        for match in _re.finditer(r'"([^"]+)"', stripped):
+                        for match in _WORKSPACE_MEMBER_RE.finditer(stripped):
                             member = match.group(1)
                             member_path = context.project_root / member / "Cargo.toml"
                             if member_path.exists():
