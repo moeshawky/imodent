@@ -938,20 +938,20 @@ def test_file_to_module_nested_init():
 
 def test_common_ancestor_shared_parent():
     """_common_ancestor finds the deepest common parent directory of two paths."""
-    paths = [Path("/a/b/c.py"), Path("/a/b/d.py")]
-    assert _common_ancestor(paths) == Path("/a/b")
+    paths = [Path("/a/b/c.py").resolve(), Path("/a/b/d.py").resolve()]
+    assert _common_ancestor(paths) == Path("/a/b").resolve()
 
 
 def test_common_ancestor_no_shared_parent():
     """_common_ancestor returns root when paths share no common ancestor."""
-    paths = [Path("/x/a.py"), Path("/y/b.py")]
-    assert _common_ancestor(paths) == Path("/")
+    paths = [Path("/x/a.py").resolve(), Path("/y/b.py").resolve()]
+    assert _common_ancestor(paths) == Path("/").resolve()
 
 
 def test_common_ancestor_identical():
     """_common_ancestor with identical paths returns the path itself."""
-    paths = [Path("/a/b/c.py"), Path("/a/b/c.py")]
-    assert _common_ancestor(paths) == Path("/a/b/c.py")
+    paths = [Path("/a/b/c.py").resolve(), Path("/a/b/c.py").resolve()]
+    assert _common_ancestor(paths) == Path("/a/b/c.py").resolve()
 
 
 def test_common_ancestor_empty():
@@ -961,20 +961,28 @@ def test_common_ancestor_empty():
 
 def test_common_ancestor_single():
     """_common_ancestor with a single path returns that resolved path."""
-    paths = [Path("/a/b/c.py")]
-    assert _common_ancestor(paths) == Path("/a/b/c.py")
+    paths = [Path("/a/b/c.py").resolve()]
+    assert _common_ancestor(paths) == Path("/a/b/c.py").resolve()
 
 
 def test_common_ancestor_three_paths():
     """_common_ancestor handles three paths with varying common ancestry."""
-    paths = [Path("/a/b/c/d/e.py"), Path("/a/b/c/f.py"), Path("/a/b/g.py")]
-    assert _common_ancestor(paths) == Path("/a/b")
+    paths = [
+        Path("/a/b/c/d/e.py").resolve(),
+        Path("/a/b/c/f.py").resolve(),
+        Path("/a/b/g.py").resolve(),
+    ]
+    assert _common_ancestor(paths) == Path("/a/b").resolve()
 
 
 def test_common_ancestor_same_directory():
     """_common_ancestor when all files are in the same directory."""
-    paths = [Path("/a/b/c.py"), Path("/a/b/d.py"), Path("/a/b/e.py")]
-    assert _common_ancestor(paths) == Path("/a/b")
+    paths = [
+        Path("/a/b/c.py").resolve(),
+        Path("/a/b/d.py").resolve(),
+        Path("/a/b/e.py").resolve(),
+    ]
+    assert _common_ancestor(paths) == Path("/a/b").resolve()
 
 
 # ============================================================================
