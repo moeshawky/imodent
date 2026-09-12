@@ -171,6 +171,9 @@ warn_return_any = false
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra -q --strict-markers --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 
 # ── coverage ────────────────────────────────────────────
 [tool.coverage.run]
