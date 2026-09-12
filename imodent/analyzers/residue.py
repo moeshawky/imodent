@@ -8,6 +8,7 @@ wire, export, register, test, or quarantine.
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from typing import TYPE_CHECKING
 
@@ -121,11 +122,18 @@ class ResidueAnalyzer(Analyzer):
                     return path, lineno, line.strip()
         return None
 
+    @staticmethod
+    @functools.lru_cache(maxsize=128)
+    def _compile_regex(pattern: str) -> re.Pattern:
+        return re.compile(pattern, flags=re.MULTILINE)
+
     def _find_regex(
         self, context: AnalysisContext, pattern: str
     ) -> tuple[Path, int, str] | None:
-        compiled = re.compile(pattern)
+        compiled = self._compile_regex(pattern)
         for path, file_info in context.files.items():
+            if not compiled.search(file_info.content):
+                continue
             if path not in self._lines_cache:
                 self._lines_cache[path] = file_info.content.splitlines()
             for lineno, line in enumerate(self._lines_cache[path], 1):
