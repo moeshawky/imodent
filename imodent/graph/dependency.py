@@ -112,14 +112,15 @@ def _resolve_import(
         return module
 
     # Try as a file path
-    possible_paths = [
-        project_root / f"{module.replace('.', '/')}.py",
-        project_root / module.replace(".", "/") / "__init__.py",
-    ]
+    module_path = module.replace(".", "/")
 
-    for path in possible_paths:
-        if path.exists():
-            return resolve_module_name(path, project_root)
+    path = project_root / f"{module_path}.py"
+    if path.exists():
+        return resolve_module_name(path, project_root)
+
+    path = project_root / f"{module_path}/__init__.py"
+    if path.exists():
+        return resolve_module_name(path, project_root)
 
     # It's likely a third-party module
     # Still track it in the graph for usage analysis
@@ -166,13 +167,17 @@ def _resolve_relative(
 
     if candidate in graph.module_to_file:
         return candidate
-    possible_paths = [
-        project_root / f"{candidate.replace('.', '/')}.py",
-        project_root / candidate.replace(".", "/") / "__init__.py",
-    ]
-    for path in possible_paths:
-        if path.exists():
-            return resolve_module_name(path, project_root)
+
+    candidate_path = candidate.replace(".", "/")
+
+    path = project_root / f"{candidate_path}.py"
+    if path.exists():
+        return resolve_module_name(path, project_root)
+
+    path = project_root / f"{candidate_path}/__init__.py"
+    if path.exists():
+        return resolve_module_name(path, project_root)
+
     return None
 
 
