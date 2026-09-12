@@ -168,9 +168,10 @@ warn_return_any = false
 
 # ── pytest ──────────────────────────────────────────────
 [tool.pytest.ini_options]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra -q --strict-markers --tb=short"
+addopts = "-ra -q --tb=short"
 
 # ── coverage ────────────────────────────────────────────
 [tool.coverage.run]
