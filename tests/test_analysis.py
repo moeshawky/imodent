@@ -3268,6 +3268,42 @@ def test_project_context_discover_no_markers(tmp_path):
     assert ctx.project_name == "just_a_dir"
 
 
+def test_project_context_discover_file_no_markers(tmp_path):
+    """ProjectContext.discover() on a file without markers falls back to its parent directory."""
+    from imodent.project.project_context import ProjectContext
+
+    plain_dir = tmp_path / "just_a_dir"
+    plain_dir.mkdir()
+    plain_file = plain_dir / "file.py"
+    plain_file.touch()
+
+    ctx = ProjectContext.discover(plain_file)
+    assert ctx.project_root == plain_dir
+    assert ctx.has_project_markers is False
+    assert ctx.project_name == "just_a_dir"
+
+
+def test_find_project_root_or_cwd(tmp_path, monkeypatch):
+    """_find_project_root_or_cwd falls back to cwd when no markers are found."""
+    from imodent.project.project_context import _find_project_root_or_cwd
+
+    plain_dir = tmp_path / "plain"
+    plain_dir.mkdir()
+    monkeypatch.chdir(plain_dir)
+    assert _find_project_root_or_cwd(plain_dir) == plain_dir
+
+
+def test_discover_project_name_invalid_toml(tmp_path, capfd):
+    """_discover_project_name handles invalid TOML gracefully and falls back to directory name."""
+    from imodent.project.project_context import _discover_project_name
+
+    (tmp_path / "pyproject.toml").write_text("invalid toml {")
+    name = _discover_project_name(tmp_path)
+    assert name == tmp_path.name
+    captured = capfd.readouterr()
+    assert "Warning: Could not parse" in captured.err
+
+
 # ============================================================================
 # Coordinator fix() mode coverage — interactive, ALL_AUTO, SAFE_AUTO, empty
 # ============================================================================
