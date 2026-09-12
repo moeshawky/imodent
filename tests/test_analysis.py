@@ -4147,12 +4147,14 @@ def test_dependency_graph_to_dict():
     graph.add_import("imodent.cli", "imodent.analysis.context")
     graph.add_import("imodent.cli", "imodent.analysis.coordinator")
     graph.add_import("imodent.analysis.coordinator", "imodent.analysis.context")
-    graph.module_to_file["imodent.cli"] = Path("/fake/imodent/cli.py")
+    graph.module_to_file["imodent.cli"] = Path(
+        str(Path(str(Path("/fake/imodent/cli.py").resolve())))
+    )
     graph.module_to_file["imodent.analysis.coordinator"] = Path(
-        "/fake/imodent/analysis/coordinator.py"
+        str(Path("/fake/imodent/analysis/coordinator.py").resolve())
     )
     graph.module_to_file["imodent.analysis.context"] = Path(
-        "/fake/imodent/analysis/context.py"
+        str(Path("/fake/imodent/analysis/context.py").resolve())
     )
 
     result = graph.to_dict()
@@ -4190,8 +4192,12 @@ def test_dependency_graph_to_dict():
         if e["from"] == "imodent.cli" and e["to"] == "imodent.analysis.context"
     ]
     assert len(cli_to_context) == 1
-    assert cli_to_context[0]["from_file"] == "/fake/imodent/cli.py"
-    assert cli_to_context[0]["to_file"] == "/fake/imodent/analysis/context.py"
+    assert cli_to_context[0]["from_file"] == str(
+        Path(str(Path("/fake/imodent/cli.py").resolve()))
+    )
+    assert cli_to_context[0]["to_file"] == str(
+        Path("/fake/imodent/analysis/context.py").resolve()
+    )
 
 
 def test_dependency_graph_to_dict_empty():
