@@ -50,6 +50,8 @@
 # Defaults to True.
 """Project context — discovered project metadata for analysis."""
 
+from __future__ import annotations
+
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,7 +95,7 @@ class ProjectContext:
             self.project_name = _discover_project_name(self.project_root)
 
     @classmethod
-    def discover(cls, path: Path) -> "ProjectContext":
+    def discover(cls, path: Path) -> ProjectContext:
         """Discover project context from a file or directory path.
 
         Walks up from the given path looking for project markers.
@@ -114,7 +116,7 @@ class ProjectContext:
         )
 
     @classmethod
-    def from_root(cls, root: Path) -> "ProjectContext":
+    def from_root(cls, root: Path) -> ProjectContext:
         """Create project context from an explicit project root."""
         config = load_config(root)
         return cls(project_root=root, config=config, has_project_markers=True)
