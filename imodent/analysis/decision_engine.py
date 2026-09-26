@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from .decision_actions import _default_actions_for_issue_type
 from .decision_confidence import _compute_confidence_label, _score_confidence
 from .decision_models import DecisionCandidate
