@@ -4354,3 +4354,29 @@ def test_coordinator_analyze_system_error_propagates(tmp_path, monkeypatch):
 
     with pytest.raises(SystemError, match="simulated system error"):
         coordinator.analyze([py_file])
+
+
+def test_extract_annotation_string_names():
+    """Verify _extract_annotation_string_names handles type names and invalid syntax safely."""
+    from imodent.analyzers.imports import _extract_annotation_string_names
+
+    # Simple types
+    assert _extract_annotation_string_names("str") == {"str"}
+    # Generic subscript
+    assert _extract_annotation_string_names("Dict[str, int]") == {"Dict", "str", "int"}
+    # Nested subscript and quoted annotations
+    assert _extract_annotation_string_names("Optional[List['User']]") == {
+        "Optional",
+        "List",
+        "User",
+    }
+    # Union syntax
+    assert _extract_annotation_string_names("int | None") == {"int"}
+    # Attribute access
+    assert _extract_annotation_string_names("module.Type") == {"module"}
+
+    # Invalid syntax or non-expression statements return empty set safely
+    assert _extract_annotation_string_names("def foo(): pass") == set()
+    assert _extract_annotation_string_names("import os") == set()
+    assert _extract_annotation_string_names("invalid syntax [[[") == set()
+    assert _extract_annotation_string_names("") == set()

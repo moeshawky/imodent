@@ -205,10 +205,12 @@ def _extract_annotation_names(annotation: Any) -> set[str]:
 def _extract_annotation_string_names(annotation: str) -> set[str]:
     """Extract type names from string annotations such as 'Dict[str, int]'."""
     try:
-        expression = ast.parse(annotation, mode="eval").body
+        tree = ast.parse(annotation, mode="exec")
     except SyntaxError:
         return set()
-    return _extract_annotation_names(expression)
+    if tree.body and isinstance(tree.body[0], ast.Expr):
+        return _extract_annotation_names(tree.body[0].value)
+    return set()
 
 
 def _collect_type_use_names(ast_tree: ast.AST) -> set[str]:
