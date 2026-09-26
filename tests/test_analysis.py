@@ -22,7 +22,11 @@ from imodent.analysis.decision_confidence import (
     _compute_confidence_label,
     _score_confidence,
 )
-from imodent.analysis.decision_engine import DecisionEngine, _issue_type_from_finding
+from imodent.analysis.decision_engine import (
+    DecisionEngine,
+    _attach_evidence_by_polarity,
+    _issue_type_from_finding,
+)
 from imodent.analysis.decision_models import DecisionCandidate, SubjectKey
 from imodent.analysis.decision_policy import (
     _destructive_allowed,
@@ -215,6 +219,70 @@ def test_decision_engine_assigns_confidence():
     assert candidates[0].confidence > 0.0
     assert candidates[0].confidence <= 1.0
     assert candidates[0].confidence_label in ("low", "medium", "high")
+
+
+def test_attach_evidence_by_polarity_opposes():
+    """Evidence with polarity='opposes' is added to candidate.evidence_against."""
+    sk = SubjectKey(kind="import", file=Path("test.py"), scope="module", name="os")
+    candidate = DecisionCandidate(issue_type="unused_import", subject_key=sk)
+    evidence = Evidence(
+        kind="RuffDiagnostic",
+        file=Path("test.py"),
+        location=None,
+        polarity="opposes",
+        claim="unused_import",
+    )
+
+    _attach_evidence_by_polarity(candidate, evidence)
+
+    assert evidence in candidate.evidence_against
+    assert evidence not in candidate.evidence_for
+
+
+def test_attach_evidence_by_polarity_supports_and_context():
+    """Evidence with polarity='supports' or 'context' is added to candidate.evidence_for."""
+    sk = SubjectKey(kind="import", file=Path("test.py"), scope="module", name="os")
+    candidate = DecisionCandidate(issue_type="unused_import", subject_key=sk)
+
+    ev_supports = Evidence(
+        kind="RuffDiagnostic",
+        file=Path("test.py"),
+        location=None,
+        polarity="supports",
+        claim="unused_import",
+    )
+    ev_context = Evidence(
+        kind="AnnotationUse",
+        file=Path("test.py"),
+        location=None,
+        polarity="context",
+        claim="type_hint_usage",
+    )
+
+    _attach_evidence_by_polarity(candidate, ev_supports)
+    _attach_evidence_by_polarity(candidate, ev_context)
+
+    assert candidate.evidence_for == [ev_supports, ev_context]
+    assert candidate.evidence_against == []
+
+
+def test_attach_evidence_by_polarity_mixed_sequence():
+    """Sequential attachment of multiple evidence items populates lists correctly."""
+    sk = SubjectKey(kind="import", file=Path("test.py"), scope="module", name="os")
+    candidate = DecisionCandidate(issue_type="unused_import", subject_key=sk)
+
+    e1 = Evidence(
+        kind="kind1", file=Path("test.py"), location=None, polarity="supports"
+    )
+    e2 = Evidence(kind="kind2", file=Path("test.py"), location=None, polarity="opposes")
+    e3 = Evidence(kind="kind3", file=Path("test.py"), location=None, polarity="context")
+    e4 = Evidence(kind="kind4", file=Path("test.py"), location=None, polarity="opposes")
+
+    for ev in [e1, e2, e3, e4]:
+        _attach_evidence_by_polarity(candidate, ev)
+
+    assert candidate.evidence_for == [e1, e3]
+    assert candidate.evidence_against == [e2, e4]
 
 
 # ---------------------------------------------------------------------------
