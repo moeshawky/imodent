@@ -75,6 +75,7 @@ exclude = [
     ".tox",
     ".mypy_cache",
     ".ruff_cache",
+    "*.md",
 ]
 
 [tool.ruff.lint]
