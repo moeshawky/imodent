@@ -102,3 +102,27 @@ def test_subprocess_shell_false():
     assert len(violations) == 0, "Dangerous shell=True patterns found:\n" + "\n".join(
         violations
     )
+
+
+def test_no_ast_parse_eval_mode():
+    """Verify ast.parse is never called with mode='eval' in imodent source."""
+    violations: list[str] = []
+
+    for py_file in _all_source_files():
+        content = py_file.read_text(encoding="utf-8")
+        lines = content.splitlines()
+
+        for lineno, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+
+            if 'mode="eval"' in stripped or "mode='eval'" in stripped:
+                violations.append(
+                    f"{py_file.relative_to(py_file.parents[2])}:{lineno}: "
+                    f"ast.parse eval mode: {stripped[:80]}"
+                )
+
+    assert len(violations) == 0, "ast.parse mode='eval' found:\n" + "\n".join(
+        violations
+    )
