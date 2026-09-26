@@ -182,8 +182,10 @@ class DependencyGraph:
                     {
                         "from": importer,
                         "to": importee,
-                        "from_file": str(importer_file) if importer_file else None,
-                        "to_file": str(importee_file) if importee_file else None,
+                        "from_file": importer_file.as_posix()
+                        if importer_file
+                        else None,
+                        "to_file": importee_file.as_posix() if importee_file else None,
                     }
                 )
         return {

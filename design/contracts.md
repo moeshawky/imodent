@@ -7,10 +7,11 @@
 @dataclass
 class FileInfo:
     """Information about a single source file."""
+
     path: Path
     content: str
     language: str  # 'python', 'json', 'yaml', etc.
-    encoding: str = 'utf-8'
+    encoding: str = "utf-8"
     line_count: int = 0
     has_syntax_errors: bool = False
     ast: ast.AST | None = None  # Parsed AST for Python files
@@ -19,30 +20,34 @@ class FileInfo:
 ### Finding
 ```python
 class Severity(Enum):
-    ERROR = "error"      # Must fix - code won't run
+    ERROR = "error"  # Must fix - code won't run
     WARNING = "warning"  # Should fix - potential bug
-    INFO = "info"        # Know about - style/optimization
-    HINT = "hint"        # Suggestion - optional improvement
+    INFO = "info"  # Know about - style/optimization
+    HINT = "hint"  # Suggestion - optional improvement
+
 
 @dataclass
 class Location:
     """Location in a source file."""
+
     line: int
     column: int | None = None
     end_line: int | None = None
     end_column: int | None = None
 
+
 @dataclass
 class Finding:
     """A single issue or observation from analysis."""
-    id: str                    # UUID for this finding
-    type: str                  # Category identifier
+
+    id: str  # UUID for this finding
+    type: str  # Category identifier
     severity: Severity
     file: Path
     location: Location | None
-    message: str               # Human-readable
-    fixable: bool              # Can a fixer act on this directly?
-    auto_fix_safe: bool        # Is auto-fix safe without review?
+    message: str  # Human-readable
+    fixable: bool  # Can a fixer act on this directly?
+    auto_fix_safe: bool  # Is auto-fix safe without review?
     data: dict = field(default_factory=dict)
 
     # Import-specific fields
@@ -70,13 +75,14 @@ Finding types with special policy:
 @dataclass
 class FixOption:
     """An option for fixing a finding."""
+
     id: str
-    label: str              # Short label for UI
-    description: str        # Full description
-    action: str             # 'investigate', 'keep', 'use', 'delete', 'custom'
-    is_safe: bool           # Can apply without review?
-    preview: str | None     # Preview of change if applicable
-    requires_input: bool    # Does this need user input?
+    label: str  # Short label for UI
+    description: str  # Full description
+    action: str  # 'investigate', 'keep', 'use', 'delete', 'custom'
+    is_safe: bool  # Can apply without review?
+    preview: str | None  # Preview of change if applicable
+    requires_input: bool  # Does this need user input?
 ```
 
 ### FixResult (expanded)
@@ -84,19 +90,22 @@ class FixOption:
 @dataclass
 class FixResult:
     """Result of a fix operation."""
+
     success: bool
-    content: str                    # Fixed content
-    original_content: str           # For diff
+    content: str  # Fixed content
+    original_content: str  # For diff
     errors: list[str]
     warnings: list[str]
-    changes: list[Change]           # What was changed
+    changes: list[Change]  # What was changed
     original_valid: bool
     fixed_valid: bool
+
 
 @dataclass
 class Change:
     """A single change made to content."""
-    type: str               # 'add', 'remove', 'modify'
+
+    type: str  # 'add', 'remove', 'modify'
     location: Location
     old_text: str | None
     new_text: str | None
@@ -108,14 +117,15 @@ class Change:
 @dataclass
 class Advice:
     """Advisory output for a finding or set of findings."""
-    finding_ids: list[str]          # Related findings
-    category: str                   # 'architecture', 'performance', 'style'
-    summary: str                    # One-line summary
-    explanation: str                # Detailed explanation
-    recommendation: str             # What to do
-    example: str | None             # Example fix or improvement
-    impact: str                     # What happens if ignored
-    priority: int                   # 1-10, higher = more important
+
+    finding_ids: list[str]  # Related findings
+    category: str  # 'architecture', 'performance', 'style'
+    summary: str  # One-line summary
+    explanation: str  # Detailed explanation
+    recommendation: str  # What to do
+    example: str | None  # Example fix or improvement
+    impact: str  # What happens if ignored
+    priority: int  # 1-10, higher = more important
 ```
 
 ## Interface Contracts
@@ -129,6 +139,7 @@ class AnalyzerCapability(Enum):
     TYPES = "types"
     STYLE = "style"
     RESIDUE = "residue"
+
 
 class Analyzer(ABC):
     """Base class for all analyzers."""
@@ -214,7 +225,9 @@ class Fixer(ABC):
         ...
 
     @abstractmethod
-    def get_options(self, finding: Finding, context: AnalysisContext) -> list[FixOption]:
+    def get_options(
+        self, finding: Finding, context: AnalysisContext
+    ) -> list[FixOption]:
         """
         Get fix options for a finding.
 
@@ -380,11 +393,12 @@ class AnalysisCoordinator:
 @dataclass
 class AnalysisError:
     """Error during analysis."""
-    analyzer: str           # Which analyzer failed
-    file: Path | None       # File being analyzed, if any
-    error_type: str         # Exception type
-    message: str            # Error message
-    recoverable: bool       # Can analysis continue?
+
+    analyzer: str  # Which analyzer failed
+    file: Path | None  # File being analyzed, if any
+    error_type: str  # Exception type
+    message: str  # Error message
+    recoverable: bool  # Can analysis continue?
 ```
 
 ### FixError
@@ -392,8 +406,9 @@ class AnalysisError:
 @dataclass
 class FixError:
     """Error during fixing."""
-    finding_id: str         # Finding being fixed
-    fixer: str              # Which fixer
+
+    finding_id: str  # Finding being fixed
+    fixer: str  # Which fixer
     error_type: str
     message: str
     content_preserved: bool  # Was original content preserved?
@@ -406,7 +421,8 @@ class FixError:
 @dataclass
 class AnalysisProgress:
     """Progress event during analysis."""
-    phase: str              # 'discovery', 'parsing', 'analyzing', 'done'
+
+    phase: str  # 'discovery', 'parsing', 'analyzing', 'done'
     current: int
     total: int
     current_file: str | None
@@ -417,7 +433,8 @@ class AnalysisProgress:
 @dataclass
 class FixProgress:
     """Progress event during fixing."""
+
     finding_id: str
-    status: str             # 'started', 'fixed', 'skipped', 'error'
+    status: str  # 'started', 'fixed', 'skipped', 'error'
     message: str | None
 ```
