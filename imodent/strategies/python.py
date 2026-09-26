@@ -14,6 +14,14 @@ import re
 from ..interfaces import FixResult, LanguageStrategy
 from ..registry import StrategyRegistry
 
+_ASSIGNMENT_RE = re.compile(r"^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=")
+_FUNC_CALL_RE = re.compile(r"^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(")
+_INDENT_ERR_RE = re.compile(
+    r"^\s*(def|class|if|for|while|with|try|async|elif|else|except|finally)\s",
+    re.MULTILINE,
+)
+_EXCESS_NEWLINES_RE = re.compile(r"\n{4,}")
+
 
 def _ends_with_block_colon(line: str) -> bool:
     """Check if line ends with a colon that starts a block, ignoring colons in strings."""
@@ -181,9 +189,9 @@ class PythonStrategy(LanguageStrategy):
             if any(line_stripped.startswith(kw) for kw in python_indicators):
                 return True
             # Check for assignment or function call patterns
-            if re.match(r"^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=", line_stripped):
+            if _ASSIGNMENT_RE.match(line_stripped):
                 return True
-            if re.match(r"^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(", line_stripped):
+            if _FUNC_CALL_RE.match(line_stripped):
                 return True
 
         # Try parsing as Python (most reliable)
@@ -192,13 +200,7 @@ class PythonStrategy(LanguageStrategy):
             return True
         except SyntaxError:
             # Check if it looks like Python with indentation issues
-            return bool(
-                re.search(
-                    r"^\s*(def|class|if|for|while|with|try|async|elif|else|except|finally)\s",
-                    content,
-                    re.MULTILINE,
-                )
-            )
+            return bool(_INDENT_ERR_RE.search(content))
 
     def fix(self, content: str, indent_size: int = 4, force: bool = False) -> FixResult:
         """Fix Python indentation using black first, then our AST logic as fallback.
@@ -374,5 +376,5 @@ class PythonStrategy(LanguageStrategy):
                 continuation_indent_stack.append(open_pos + 1)
 
         result = "\n".join(fixed_lines)
-        result = re.sub(r"\n{4,}", "\n\n\n", result)
+        result = _EXCESS_NEWLINES_RE.sub("\n\n\n", result)
         return result + "\n"
