@@ -620,8 +620,9 @@ class ImportAnalyzer(Analyzer):
         if not file_info.ast_tree:
             return findings
 
-        # Collect ALL name references including type annotations
+        # Collect ALL name references including type annotations and __all__ exports
         used_names = set()
+        dunder_all_names = set()
         type_use_names = _collect_type_use_names(file_info.ast_tree)
         for node in ast.walk(file_info.ast_tree):
             # Direct usage
@@ -660,14 +661,11 @@ class ImportAnalyzer(Analyzer):
                 for dec in node.decorator_list:
                     if isinstance(dec, ast.Name):
                         used_names.add(dec.id)
-
-        # Check __all__ exports
-        # __all__ collection: iterates list/tuple elements in __all__ = [...] assignments.
-        # Names appearing in __all__ are excluded from unused-import detection.
-        # This catches explicit package re-export patterns but misses dynamic __all__.
-        dunder_all_names = set()
-        for node in ast.walk(file_info.ast_tree):
-            if isinstance(node, ast.Assign):
+            # Check __all__ exports
+            # __all__ collection: iterates list/tuple elements in __all__ = [...] assignments.
+            # Names appearing in __all__ are excluded from unused-import detection.
+            # This catches explicit package re-export patterns but misses dynamic __all__.
+            elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if (
                         isinstance(target, ast.Name)
