@@ -29,7 +29,7 @@ Auto-detect language and fix indentation.
 from imodent import FixPipeline
 
 pipeline = FixPipeline(indent_size=4)
-result = pipeline.fix('def f():\nif True:\npass')
+result = pipeline.fix("def f():\nif True:\npass")
 if result.success:
     print(result.content)
 else:
@@ -45,7 +45,7 @@ result = pipeline.fix(broken_code, force=True)
 Validate without fixing.
 
 ```python
-result = pipeline.validate('def f():\n    pass')
+result = pipeline.validate("def f():\n    pass")
 print("✓" if result.success else "✗")
 ```
 
@@ -92,12 +92,12 @@ Typed result from all fix/validate operations.
 ```python
 @dataclass
 class FixResult:
-    success: bool         # Did the operation succeed?
-    content: str          # The (possibly fixed) content
-    errors: List[str]     # Error messages
-    warnings: List[str]   # Warning messages
+    success: bool  # Did the operation succeed?
+    content: str  # The (possibly fixed) content
+    errors: List[str]  # Error messages
+    warnings: List[str]  # Warning messages
     original_valid: bool  # Was the input valid?
-    fixed_valid: bool     # Is the output valid?
+    fixed_valid: bool  # Is the output valid?
 ```
 
 **Source:** `imodent/interfaces.py`
@@ -127,8 +127,13 @@ Enum: `ERROR`, `WARNING`, `INFO`, `HINT`
 ### `FixOption`
 
 ```python
-FixOption(id="delete", label="Delete import", description="Remove unused import",
-          action="delete", is_safe=True)
+FixOption(
+    id="delete",
+    label="Delete import",
+    description="Remove unused import",
+    action="delete",
+    is_safe=True,
+)
 ```
 
 **Source:** `imodent/analysis/findings.py`
@@ -168,8 +173,7 @@ from imodent.registry import StrategyRegistry
 
 
 @StrategyRegistry.register
-class MyStrategy(LanguageStrategy):
-    ...
+class MyStrategy(LanguageStrategy): ...
 ```
 
 ### `StrategyRegistry.get(name: str)`
